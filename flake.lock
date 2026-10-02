@@ -1,0 +1,86 @@
+{
+  "nodes": {
+    "clipboard-sync-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1759253700,
+        "narHash": "sha256-pDsDzWEBaZlT9lHsBZMGm8aBJGncMxqerKwkzjEM/EI=",
+        "owner": "dnut",
+        "repo": "clipboard-sync",
+        "rev": "138a59b8f3044dd9e7dcccd9607bbbb48c14bae6",
+        "type": "github"
+      },
+      "original": {
+        "owner": "dnut",
+        "repo": "clipboard-sync",
+        "type": "github"
+      }
+    },
+    "home-manager": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1790928438,
+        "narHash": "sha256-ZuJbu8VQe/Qzy7GJdZ3Xv7adRllH1o4O7nqONtkhFbA=",
+        "owner": "nix-community",
+        "repo": "home-manager",
+        "rev": "833540099ef43cbeb28b1e3f3c21901961edb48e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-community",
+        "repo": "home-manager",
+        "type": "github"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1790822859,
+        "narHash": "sha256-69xHQhAeMAD2wDXO7T2pcOZIF9Sga2W+JkmY2a11Ops=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "c59305bab2065cfecc4944690d9eedbb56f3a9fa",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "home-manager": "home-manager",
+        "nixpkgs": "nixpkgs",
+        "steam-frame-nix": "steam-frame-nix"
+      }
+    },
+    "steam-frame-nix": {
+      "inputs": {
+        "clipboard-sync-src": "clipboard-sync-src",
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1790894478,
+        "narHash": "sha256-hKJoJiGpulabiy3iX9JeZYAZEEboBstWBXHsoxaAI5M=",
+        "owner": "lhns",
+        "repo": "steam-frame-nix",
+        "rev": "07b2e6f682a3c010cc62607fd3c24e159244da58",
+        "type": "github"
+      },
+      "original": {
+        "owner": "lhns",
+        "repo": "steam-frame-nix",
+        "type": "github"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}
