@@ -82,6 +82,10 @@
     firefox.enable = true;             # launcher for the Firefox Flatpak
     # the Frame has no AV1 decoder: sites send VP9/H.264 (hardware):
     firefox.disableAv1 = true;
+    # while the pointer is locked, Firefox's pointerrawupdate events carry
+    # zero movement in getCoalescedEvents(), which GeForce NOW reads, so its
+    # cursor never moved; without pointerrawupdate it uses pointermove:
+    firefox.prefs."dom.event.pointer.rawupdate.enabled" = false;
     firefox.defaultBrowser = true;     # default for http/https links
     # the same (default) profile in the nested desktop as in the Steam
     # session; Firefox then runs in only one of them at a time:
