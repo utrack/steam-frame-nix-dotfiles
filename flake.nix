@@ -7,6 +7,9 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # For libraries loaded inside Flatpaks (firefox-hwdec): glibc no newer
+    # than the Flatpak runtime's (org.freedesktop.Platform 25.08: 2.42).
+    nixpkgs-flatpak.url = "github:NixOS/nixpkgs/nixos-26.05";
     # Steam Frame fixes (steamFrame.* options).
     steam-frame-nix = {
       url = "github:lhns/steam-frame-nix";
@@ -14,7 +17,7 @@
     };
   };
 
-  outputs = { nixpkgs, home-manager, steam-frame-nix, ... }:
+  outputs = { nixpkgs, nixpkgs-flatpak, home-manager, steam-frame-nix, ... }:
   let
     # Filled in by install.sh; the defaults match the Steam Frame.
     username = "steamos";
@@ -24,7 +27,10 @@
   in {
     homeConfigurations.${username} = home-manager.lib.homeManagerConfiguration {
       pkgs = nixpkgs.legacyPackages.${system};
-      extraSpecialArgs = { inherit username homeDirectory; };
+      extraSpecialArgs = {
+        inherit username homeDirectory;
+        pkgsFlatpak = nixpkgs-flatpak.legacyPackages.${system};
+      };
       modules = [
         steam-frame-nix.homeManagerModules.default
         ./home.nix

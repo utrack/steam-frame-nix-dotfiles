@@ -1,4 +1,10 @@
 { config, pkgs, username, homeDirectory, ... }: {
+  imports = [
+    ./host-gpu       # config.lib.hostGpu.wrap: Nix apps on SteamOS's GPU drivers
+    ./kdeconnect.nix # KDE Connect in the Frametop desktop
+    ./firefox-hwdec  # hardware video decoding in the Firefox Flatpak
+  ];
+
   home.username = username;            # set in flake.nix
   home.homeDirectory = homeDirectory;  # set in flake.nix
 
@@ -28,33 +34,33 @@
 
   # Steam Frame fixes, see https://github.com/lhns/steam-frame-nix
   # (session.portalFix and session.applicationsMenu are on by default).
-  # steamFrame = {
+  steamFrame = {
   #   keyboard.layout = "de";               # XKB layout, Steam session
-  #   keyboard.vr.extraKeys.enable = true;  # Esc/Ctrl/Alt/arrows in VR
-  #   keyboard.vr.enable = true;            # swipe, suggestions, Backspace drag
-  #   # nested desktop <-> Steam session clipboard (builds from source,
-  #   # takes a while):
-  #   clipboardSync.enable = true;
-  #   # VR "+" menu: sorted by name, Desktop pinned below the list, closed
-  #   # on click, no second launch of the same program within 10 s, programs
-  #   # as a grid of 4 columns, at most 4 rows visible:
-  #   launcherMenu = {
-  #     sort = true;
-  #     pinDesktop = "bottom";
-  #     closeOnLaunch = true;
-  #     launchDebounceSeconds = 10;
-  #     grid = { enable = true; columns = 4; maxRows = 4; };
-  #     # All programs without Steam's Developer Mode (Konsole, KDE System
-  #     # Settings, Dolphin, ... are hidden otherwise):
-  #     showAllApps = true;
-  #     # Icon fallbacks (Konsole, KDE System Settings) are on by default;
-  #     # further Breeze icon names (each switch suggests some):
-  #     # iconFallbacks.extra = [ "system-file-manager" ];
-  #     # Hidden from the menu (listed with Developer Mode or showAllApps):
-  #     hiddenApps = [ "lxterminal" "cmake-gui" "firewall-config" "renderdoc" ];
-  #   };
-  #   # SteamVR dashboard windows: resizable up to 4x (stock 2x), pushed
-  #   # back up to 10 m in the world / 12 m in theater mode (stock 5 / 6 m):
+    keyboard.vr.extraKeys.enable = true;  # Esc/Ctrl/Alt/arrows in VR
+    keyboard.vr.enable = true;            # swipe, suggestions, Backspace drag
+    # nested desktop <-> Steam session clipboard (builds from source,
+    # takes a while):
+    clipboardSync.enable = true;
+    # VR "+" menu: sorted by name, Desktop pinned below the list, closed
+    # on click, no second launch of the same program within 10 s, programs
+    # as a grid of 4 columns, at most 4 rows visible:
+    launcherMenu = {
+      sort = true;
+      pinDesktop = "bottom";
+      closeOnLaunch = true;
+      launchDebounceSeconds = 10;
+      grid = { enable = true; columns = 4; maxRows = 4; };
+      # All programs without Steam's Developer Mode (Konsole, KDE System
+      # Settings, Dolphin, ... are hidden otherwise):
+      showAllApps = true;
+      # Icon fallbacks (Konsole, KDE System Settings) are on by default;
+      # further Breeze icon names (each switch suggests some):
+      # iconFallbacks.extra = [ "system-file-manager" ];
+      # Hidden from the menu (listed with Developer Mode or showAllApps):
+      hiddenApps = [ "lxterminal" "cmake-gui" "firewall-config" "renderdoc" ];
+    };
+    # SteamVR dashboard windows: resizable up to 4x (stock 2x), pushed
+    # back up to 10 m in the world / 12 m in theater mode (stock 5 / 6 m):
   #   dashboard = {
   #     windows.maxScale = 4.0;
   #     windows.distance.world.max = 10.0;
@@ -70,23 +76,26 @@
   #     # move it between the bar and the three-dot menu:
   #     frameControls.enable = true;
   #   };
-  #   # A 3D cat or dog in SteamVR's scene; "Pet" in the "+" menu (the
-  #   # first switch bakes its models, about 0.5 GB):
-  #   pet.enable = true;
-  #   firefox.enable = true;             # launcher for the Firefox Flatpak
-  #   # the Frame has no AV1 decoder: sites send VP9/H.264 (hardware):
-  #   firefox.disableAv1 = true;
-  #   firefox.defaultBrowser = true;     # default for http/https links
-  #   # Hardware video decoding in the Jellyfin Desktop Flatpak (install
-  #   # org.jellyfin.JellyfinDesktop yourself); gives it devices=all:
-  #   jellyfin.hardwareDecoding.enable = true;
-  #   # Apps that keep logins in the KDE wallet: one wallet for both
-  #   # sessions (install the Signal Flatpak org.signal.Signal yourself):
+    # A 3D cat or dog in SteamVR's scene; "Pet" in the "+" menu (the
+    # first switch bakes its models, about 0.5 GB):
+    pet.enable = true;
+    firefox.enable = true;             # launcher for the Firefox Flatpak
+    # the Frame has no AV1 decoder: sites send VP9/H.264 (hardware):
+    firefox.disableAv1 = true;
+    firefox.defaultBrowser = true;     # default for http/https links
+    # the same (default) profile in the nested desktop as in the Steam
+    # session; Firefox then runs in only one of them at a time:
+    firefox.desktopProfile = null;
+    # Hardware video decoding in the Jellyfin Desktop Flatpak (install
+    # org.jellyfin.JellyfinDesktop yourself); gives it devices=all:
+    jellyfin.hardwareDecoding.enable = true;
+    # Apps that keep logins in the KDE wallet: one wallet for both
+    # sessions (install the Signal Flatpak org.signal.Signal yourself):
   #   launchers."org.signal.Signal" = {
   #     keyring = { enable = true; electron = true; };
   #     # link callbacks:
   #     defaultFor = [ "x-scheme-handler/sgnl" "x-scheme-handler/signalcaptcha" ];
   #   };
   #   docker.enable = true;              # rootless Docker, user service
-  # };
+  };
 }
