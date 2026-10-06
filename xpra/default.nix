@@ -5,10 +5,13 @@
 #
 #   hal2 <command> [args...]   runs the command in hal2's xpra session (:100),
 #                              starting the local client as needed
+#   hal2-vicinae               toggles a vicinae instance of its own in that session
 #
 # The client connects to the first of knownHosts and ~/.config/xpra/hal2/hosts that answers,
-# or asks for a host (kdialog) when none does; HAL2_HOST=<host[:port]> skips both.
-#   hal2-vicinae               toggles a vicinae instance of its own in that session
+# or asks for a host (kdialog) when none does; HAL2_HOST=<host[:port]> skips both. It reconnects
+# whenever the connection drops (giving up after giveUpSeconds without any host), and switches
+# to a host earlier in the list as soon as that one answers. "Disconnect" in xpra's tray menu
+# ends it for good, until the next `hal2`.
 #
 # Windows land on the Steam session's X display (:0), which floats each of them.
 { config, pkgs, ... }:
@@ -23,38 +26,38 @@ let
   # tried in order, before the hosts entered in the picker (~/.config/xpra/hal2/hosts)
   knownHosts = [ "10.86.200.234" "hal2.home.arpa" ];
   port = 14500;
+  giveUpSeconds = 300;
 
-  hal2 = pkgs.writeShellApplication {
-    name = "hal2";
-    runtimeInputs = [ xpra pkgs.procps pkgs.coreutils pkgs.gnugrep pkgs.gawk ];
+  common = ''
+    creds=$HOME/.config/xpra/hal2
+    opts=(--ssl-ca-certs="$creds/cert.pem" --password-file="$creds/password"
+          --ssl-server-hostname=${certName})
+    run=''${XDG_RUNTIME_DIR:-/tmp}
+    lock=$run/hal2-xpra.lock
+    # URL of the current connection, written by hal2-client
+    sessionfile=$run/hal2-xpra.session
+    export DISPLAY=:0 GDK_BACKEND=x11
+  '';
+
+  # keeps one client attached to the best reachable host, for as long as it holds $lock
+  hal2-client = pkgs.writeShellApplication {
+    name = "hal2-client";
+    runtimeInputs = [ xpra pkgs.procps pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.util-linux ];
     text = ''
-      creds=$HOME/.config/xpra/hal2
+      ${common}
       hostsfile=$creds/hosts
-      opts=(--ssl-ca-certs="$creds/cert.pem" --password-file="$creds/password"
-            --ssl-server-hostname=${certName})
-      run=''${XDG_RUNTIME_DIR:-/tmp}
-      log=$run/hal2-xpra.log
-      export DISPLAY=:0 GDK_BACKEND=x11
+      exec 9>"$lock"
+      flock -n 9 || exit 0
+      trap 'rm -f "$sessionfile"' EXIT
+      # a client started without hal2-client would show every window a second time
+      pkill -f "xpra-wrapped attach quic://" || true
 
       # host or host:port
       url() { case $1 in *:*) echo "quic://$1/" ;; *) echo "quic://$1:${toString port}/" ;; esac; }
+      probe() { timeout 3 xpra id "$(url "$1")" "''${opts[@]}" >/dev/null 2>&1; }
 
-      hosts() {
-        printf '%s\n' ${pkgs.lib.escapeShellArgs knownHosts}
-        [ -f "$hostsfile" ] && cat "$hostsfile"
-      }
-
-      # $HAL2_HOST, else the first known host that answers, else a picker
-      pick() {
-        if [ -n "''${HAL2_HOST:-}" ]; then url "$HAL2_HOST"; return; fi
-        local h list=()
-        mapfile -t list < <(hosts | grep -v '^\s*$' | awk '!seen[$0]++')
-        for h in "''${list[@]}"; do
-          if timeout 3 xpra id "$(url "$h")" "''${opts[@]}" >/dev/null 2>&1; then
-            url "$h"; return
-          fi
-        done
-        local other="Other..."
+      ask() {
+        local h other="Other..."
         h=$(kdialog --title hal2 --combobox "hal2 is not reachable at the known hosts. Connect to:" \
               "''${list[@]}" "$other" --default "''${list[0]}") || return 1
         if [ "$h" = "$other" ]; then
@@ -62,21 +65,71 @@ let
           [ -n "$h" ] || return 1
           printf '%s\n' "''${list[@]}" | grep -qxF "$h" || echo "$h" >>"$hostsfile"
         fi
-        url "$h"
+        echo "$h"
       }
 
-      session=$(pgrep -af "xpra-wrapped attach quic://" | grep -om1 'quic://[^ ]*' || true)
-      if [ -z "$session" ]; then
-        session=$(pick) || { echo "hal2: no host selected" >&2; exit 1; }
-        setsid xpra attach "$session" "''${opts[@]}" >"$log" 2>&1 &
-      fi
+      first=1
+      lost=$(date +%s)
+      while :; do
+        mapfile -t list < <({ printf '%s\n' ${pkgs.lib.escapeShellArgs knownHosts}
+                              cat "$hostsfile" 2>/dev/null || true; } | grep -v '^\s*$' | awk '!seen[$0]++')
+        [ -n "''${HAL2_HOST:-}" ] && list=("$HAL2_HOST")
+        host=""
+        for h in "''${list[@]}"; do probe "$h" && { host=$h; break; }; done
+        # only the first attempt asks; reconnects wait for a known host instead
+        if [ -z "$host" ] && [ "$first" = 1 ]; then host=$(ask) || exit 1; fi
+        first=0
+        if [ -z "$host" ]; then
+          if (( $(date +%s) - lost > ${toString giveUpSeconds} )); then
+            echo "hal2-client: no host reachable for ${toString giveUpSeconds}s, giving up"; exit 1
+          fi
+          sleep 5; continue
+        fi
+
+        echo "hal2-client: connecting to $host"
+        url "$host" >"$sessionfile"
+        xpra attach "$(url "$host")" "''${opts[@]}" --reconnect=no 9>&- &
+        client=$!
+        better=()
+        for h in "''${list[@]}"; do [ "$h" = "$host" ] && break; better+=("$h"); done
+        t=0
+        while kill -0 "$client" 2>/dev/null; do
+          sleep 1
+          (( ++t % 15 )) && continue
+          for h in "''${better[@]}"; do
+            if probe "$h"; then echo "hal2-client: $h answers, switching"; kill "$client"; break; fi
+          done
+        done
+        status=0
+        wait "$client" || status=$?
+        rm -f "$sessionfile"
+        # 0: "Disconnect" in the tray menu, or hal2's session ended
+        [ "$status" = 0 ] && exit 0
+        echo "hal2-client: client exited with $status, reconnecting"
+        lost=$(date +%s)
+      done
+    '';
+  };
+
+  hal2 = pkgs.writeShellApplication {
+    name = "hal2";
+    runtimeInputs = [ xpra hal2-client pkgs.coreutils pkgs.util-linux ];
+    text = ''
+      ${common}
+      log=$run/hal2-xpra.log
+      running() { ! flock -n "$lock" true; }
+      if ! running; then setsid hal2-client >"$log" 2>&1 & fi
 
       [ $# -eq 0 ] && exit 0
-      for _ in $(seq 30); do
-        xpra control "$session" "''${opts[@]}" start -- "$@" >/dev/null 2>&1 && exit 0
+      sleep 1
+      # the first connection may wait for the host picker
+      for _ in $(seq 120); do
+        running || break
+        session=$(cat "$sessionfile" 2>/dev/null || true)
+        [ -n "$session" ] && xpra control "$session" "''${opts[@]}" start -- "$@" >/dev/null 2>&1 && exit 0
         sleep 1
       done
-      echo "hal2: could not start '$*' in $session, see $log" >&2
+      echo "hal2: could not start '$*' in hal2's session, see $log" >&2
       exit 1
     '';
   };
