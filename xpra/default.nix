@@ -10,7 +10,11 @@
 # Windows land on the Steam session's X display (:0), which floats each of them.
 { config, pkgs, ... }:
 let
-  xpra = config.lib.hostGpu.wrap pkgs.xpra;
+  # gamescope takes xpra's popups (menus, Firefox's autoscroll icon) for SDL fullscreen wrappers
+  # because of the child window GDK gives them, and shows them instead of their parent window
+  xpra = config.lib.hostGpu.wrap (pkgs.xpra.overrideAttrs (old: {
+    patches = (old.patches or [ ]) ++ [ ./gamescope-popups.patch ];
+  }));
   session = "quic://hal2.home.arpa:14500/";
 
   hal2 = pkgs.writeShellApplication {

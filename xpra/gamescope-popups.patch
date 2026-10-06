@@ -1,0 +1,86 @@
+diff --git a/xpra/client/gtk3/window/base.py b/xpra/client/gtk3/window/base.py
+index 314c407..601c785 100644
+--- a/xpra/client/gtk3/window/base.py
++++ b/xpra/client/gtk3/window/base.py
+@@ -6,7 +6,9 @@
+ # Xpra is released under the terms of the GNU GPL v2, or, at your option, any
+ # later version. See the file COPYING for details.
+ 
++import ctypes
+ import os.path
++from ctypes.util import find_library
+ from time import monotonic
+ from typing import Any
+ from collections.abc import Callable, Sequence
+@@ -152,6 +154,60 @@ def get_follow_window_types() -> Sequence[Gdk.WindowTypeHint]:
+ FOLLOW_WINDOW_TYPES = get_follow_window_types()
+ 
+ 
++def hide_children_from_gamescope(xid: int) -> None:
++    # gamescope treats an override-redirect window with a single non-override-redirect child
++    # as an old SDL fullscreen wrapper and stops treating it as override-redirect, so popups
++    # become the focused window instead of being stacked over their parent.
++    # GDK gives every popup such a child: its 1x1 InputOnly _NET_WM_USER_TIME_WINDOW.
++    # The override-redirect flag means nothing for windows that aren't children of the root,
++    # so marking the children override-redirect too doesn't change anything else.
++    global _xlib, _xdisplay
++    if _xlib is None:
++        _xlib = ctypes.CDLL(find_library("X11") or "libX11.so.6")
++        _xlib.XOpenDisplay.restype = ctypes.c_void_p
++        _xlib.XOpenDisplay.argtypes = [ctypes.c_char_p]
++        _xlib.XQueryTree.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(ctypes.c_ulong),
++                                     ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.POINTER(ctypes.c_ulong)),
++                                     ctypes.POINTER(ctypes.c_uint)]
++        _xlib.XChangeWindowAttributes.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong,
++                                                   ctypes.POINTER(XSetWindowAttributes)]
++        _xlib.XFree.argtypes = [ctypes.c_void_p]
++        _xlib.XSync.argtypes = [ctypes.c_void_p, ctypes.c_int]
++        _xdisplay = _xlib.XOpenDisplay(None)
++    if not _xdisplay:
++        return
++    root, parent, n = ctypes.c_ulong(), ctypes.c_ulong(), ctypes.c_uint()
++    children = ctypes.POINTER(ctypes.c_ulong)()
++    if not _xlib.XQueryTree(_xdisplay, xid, ctypes.byref(root), ctypes.byref(parent), ctypes.byref(children),
++                            ctypes.byref(n)):
++        return
++    xids = [children[i] for i in range(n.value)]
++    if children:
++        _xlib.XFree(children)
++    attrs = XSetWindowAttributes(override_redirect=1)
++    for child in xids:
++        _xlib.XChangeWindowAttributes(_xdisplay, child, CW_OVERRIDE_REDIRECT, ctypes.byref(attrs))
++    # this must reach the server before GTK maps the popup:
++    _xlib.XSync(_xdisplay, 0)
++    log("hide_children_from_gamescope(%#x) children=%s", xid, [hex(c) for c in xids])
++
++
++class XSetWindowAttributes(ctypes.Structure):
++    _fields_ = [
++        ("background_pixmap", ctypes.c_ulong), ("background_pixel", ctypes.c_ulong),
++        ("border_pixmap", ctypes.c_ulong), ("border_pixel", ctypes.c_ulong),
++        ("bit_gravity", ctypes.c_int), ("win_gravity", ctypes.c_int), ("backing_store", ctypes.c_int),
++        ("backing_planes", ctypes.c_ulong), ("backing_pixel", ctypes.c_ulong), ("save_under", ctypes.c_int),
++        ("event_mask", ctypes.c_long), ("do_not_propagate_mask", ctypes.c_long),
++        ("override_redirect", ctypes.c_int), ("colormap", ctypes.c_ulong), ("cursor", ctypes.c_ulong),
++    ]
++
++
++CW_OVERRIDE_REDIRECT = 1 << 9
++_xlib = None
++_xdisplay = None
++
++
+ # noinspection PyTestUnpassedFixture
+ def noop_destroy() -> None:
+     log.warn("Warning: window destroy called twice!")
+@@ -548,6 +604,10 @@ class GTKClientWindowBase(ClientWindowBase, Gtk.Window):
+         if HAS_X11_BINDINGS:
+             # request frame extents if the window manager supports it
+             self._client.request_frame_extents(self)
++        gdkwin = self.get_window()
++        if POSIX and not OSX and gdkwin.get_window_type() == Gdk.WindowType.TEMP and hasattr(gdkwin, "get_xid"):
++            with eventslog.trap_error(f"Error hiding the child windows of {self.wid:#x} from gamescope"):
++                hide_children_from_gamescope(gdkwin.get_xid())
+         if self.group_leader:
+             self.get_window().set_group(self.group_leader)
+ 
