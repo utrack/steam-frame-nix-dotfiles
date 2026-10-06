@@ -27,6 +27,8 @@ let
   knownHosts = [ "10.86.200.234" "hal2.home.arpa" ];
   port = 14500;
   giveUpSeconds = 300;
+  # how long the client waits for an unresponsive hal2 before reconnecting
+  pingTimeoutSeconds = 10;
 
   common = ''
     creds=$HOME/.config/xpra/hal2
@@ -88,7 +90,10 @@ let
 
         echo "hal2-client: connecting to $host"
         url "$host" >"$sessionfile"
-        xpra attach "$(url "$host")" "''${opts[@]}" --reconnect=no 9>&- &
+        # a dead link only ends the client after XPRA_PING_TIMEOUT (60 s by default), with frozen
+        # windows meanwhile
+        XPRA_PING_TIMEOUT=${toString pingTimeoutSeconds} \
+          xpra attach "$(url "$host")" "''${opts[@]}" --reconnect=no 9>&- &
         client=$!
         better=()
         for h in "''${list[@]}"; do [ "$h" = "$host" ] && break; better+=("$h"); done
