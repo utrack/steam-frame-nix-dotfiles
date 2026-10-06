@@ -2,6 +2,8 @@
 #
 # The session (:100) runs on hal2 as the systemd user service xpra-hal2; the client checks
 # hal2's self-signed certificate and authenticates with the files in ~/.config/xpra/hal2.
+# The session ends with its last window (--exit-with-windows, which disconnects the client for
+# good) and the service starts a fresh one for the next `hal2 <command>`.
 #
 #   hal2 <command> [args...]   runs the command in hal2's xpra session (:100),
 #                              starting the local client as needed

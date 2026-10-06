@@ -8,6 +8,7 @@ in {
     ./firefox-hwdec  # hardware video decoding in the Firefox Flatpak
     ./xpra           # hal2's apps as floating VR windows (`hal2 <command>`, Vicinae)
     ./netbird        # NetBird VPN: system daemon (netbird-service-install) and desktop app
+    ./lan-mouse      # hal2's keyboard and mouse in the Steam session
   ];
 
   home.username = username;            # set in flake.nix
