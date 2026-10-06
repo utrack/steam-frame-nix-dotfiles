@@ -5,6 +5,9 @@
 #
 #   hal2 <command> [args...]   runs the command in hal2's xpra session (:100),
 #                              starting the local client as needed
+#
+# The client connects to the first of knownHosts and ~/.config/xpra/hal2/hosts that answers,
+# or asks for a host (kdialog) when none does; HAL2_HOST=<host[:port]> skips both.
 #   hal2-vicinae               toggles a vicinae instance of its own in that session
 #
 # Windows land on the Steam session's X display (:0), which floats each of them.
@@ -15,19 +18,56 @@ let
   xpra = config.lib.hostGpu.wrap (pkgs.xpra.overrideAttrs (old: {
     patches = (old.patches or [ ]) ++ [ ./gamescope-popups.patch ];
   }));
-  session = "quic://hal2.home.arpa:14500/";
+  # hal2's certificate is for this name, whichever address the client connects to
+  certName = "hal2.home.arpa";
+  # tried in order, before the hosts entered in the picker (~/.config/xpra/hal2/hosts)
+  knownHosts = [ "10.86.200.234" "hal2.home.arpa" ];
+  port = 14500;
 
   hal2 = pkgs.writeShellApplication {
     name = "hal2";
-    runtimeInputs = [ xpra pkgs.procps ];
+    runtimeInputs = [ xpra pkgs.procps pkgs.coreutils pkgs.gnugrep pkgs.gawk ];
     text = ''
-      session=${session}
       creds=$HOME/.config/xpra/hal2
-      opts=(--ssl-ca-certs="$creds/cert.pem" --password-file="$creds/password")
-      log=''${XDG_RUNTIME_DIR:-/tmp}/hal2-xpra.log
+      hostsfile=$creds/hosts
+      opts=(--ssl-ca-certs="$creds/cert.pem" --password-file="$creds/password"
+            --ssl-server-hostname=${certName})
+      run=''${XDG_RUNTIME_DIR:-/tmp}
+      log=$run/hal2-xpra.log
       export DISPLAY=:0 GDK_BACKEND=x11
 
-      if ! pgrep -f "xpra-wrapped attach $session" >/dev/null; then
+      # host or host:port
+      url() { case $1 in *:*) echo "quic://$1/" ;; *) echo "quic://$1:${toString port}/" ;; esac; }
+
+      hosts() {
+        printf '%s\n' ${pkgs.lib.escapeShellArgs knownHosts}
+        [ -f "$hostsfile" ] && cat "$hostsfile"
+      }
+
+      # $HAL2_HOST, else the first known host that answers, else a picker
+      pick() {
+        if [ -n "''${HAL2_HOST:-}" ]; then url "$HAL2_HOST"; return; fi
+        local h list=()
+        mapfile -t list < <(hosts | grep -v '^\s*$' | awk '!seen[$0]++')
+        for h in "''${list[@]}"; do
+          if timeout 3 xpra id "$(url "$h")" "''${opts[@]}" >/dev/null 2>&1; then
+            url "$h"; return
+          fi
+        done
+        local other="Other..."
+        h=$(kdialog --title hal2 --combobox "hal2 is not reachable at the known hosts. Connect to:" \
+              "''${list[@]}" "$other" --default "''${list[0]}") || return 1
+        if [ "$h" = "$other" ]; then
+          h=$(kdialog --title hal2 --inputbox "Host or host:port of hal2 (port ${toString port} by default):" "") || return 1
+          [ -n "$h" ] || return 1
+          printf '%s\n' "''${list[@]}" | grep -qxF "$h" || echo "$h" >>"$hostsfile"
+        fi
+        url "$h"
+      }
+
+      session=$(pgrep -af "xpra-wrapped attach quic://" | grep -om1 'quic://[^ ]*' || true)
+      if [ -z "$session" ]; then
+        session=$(pick) || { echo "hal2: no host selected" >&2; exit 1; }
         setsid xpra attach "$session" "''${opts[@]}" >"$log" 2>&1 &
       fi
 
