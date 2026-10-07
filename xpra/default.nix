@@ -11,9 +11,10 @@
 #
 # The client connects to the first of knownHosts and ~/.config/xpra/hal2/hosts that answers,
 # or asks for a host (kdialog) when none does; HAL2_HOST=<host[:port]> skips both. It reconnects
-# whenever the connection drops (giving up after giveUpSeconds without any host), and switches
-# to a host earlier in the list as soon as that one answers. "Disconnect" in xpra's tray menu
-# ends it for good, until the next `hal2`.
+# whenever the connection drops (giving up after giveUpSeconds without any host), asks again
+# when a `hal2 <command>` comes while no host answers, and switches to a host earlier in the
+# list as soon as that one answers. "Disconnect" in xpra's tray menu ends it for good, until the
+# next `hal2`. `hal2 <command>` reports its failures with kdialog.
 #
 # Windows land on the Steam session's X display (:0), which floats each of them.
 { config, pkgs, ... }:
@@ -40,6 +41,8 @@ let
     lock=$run/hal2-xpra.lock
     # URL of the current connection, written by hal2-client
     sessionfile=$run/hal2-xpra.session
+    # created by hal2 to have a waiting hal2-client ask for a host again
+    askfile=$run/hal2-xpra.ask
     export DISPLAY=:0 GDK_BACKEND=x11
   '';
 
@@ -52,7 +55,8 @@ let
       hostsfile=$creds/hosts
       exec 9>"$lock"
       flock -n 9 || exit 0
-      trap 'rm -f "$sessionfile"' EXIT
+      rm -f "$askfile"
+      trap 'rm -f "$sessionfile" "$askfile"' EXIT
       # a client started without hal2-client would show every window a second time
       pkill -f "xpra-wrapped attach quic://" || true
 
@@ -80,8 +84,13 @@ let
         [ -n "''${HAL2_HOST:-}" ] && list=("$HAL2_HOST")
         host=""
         for h in "''${list[@]}"; do probe "$h" && { host=$h; break; }; done
-        # only the first attempt asks; reconnects wait for a known host instead
-        if [ -z "$host" ] && [ "$first" = 1 ]; then host=$(ask) || exit 1; fi
+        # the first attempt asks; reconnects wait for a known host instead, unless hal2 has a
+        # command waiting
+        if [ -z "$host" ] && { [ "$first" = 1 ] || [ -e "$askfile" ]; }; then
+          rm -f "$askfile"
+          host=$(ask) || { echo "hal2-client: host picker cancelled"; exit 1; }
+          lost=$(date +%s)
+        fi
         first=0
         if [ -z "$host" ]; then
           if (( $(date +%s) - lost > ${toString giveUpSeconds} )); then
@@ -90,6 +99,7 @@ let
           sleep 5; continue
         fi
 
+        rm -f "$askfile"
         echo "hal2-client: connecting to $host"
         url "$host" >"$sessionfile"
         # a dead link only ends the client after XPRA_PING_TIMEOUT (60 s by default), with frozen
@@ -120,12 +130,17 @@ let
 
   hal2 = pkgs.writeShellApplication {
     name = "hal2";
-    runtimeInputs = [ xpra hal2-client pkgs.coreutils pkgs.util-linux ];
+    runtimeInputs = [ xpra hal2-client pkgs.coreutils pkgs.gnugrep pkgs.util-linux ];
     text = ''
       ${common}
       log=$run/hal2-xpra.log
       running() { ! flock -n "$lock" true; }
-      if ! running; then setsid hal2-client >"$log" 2>&1 & fi
+      if running; then
+        # a client waiting for a host to come back would never pick up this command
+        [ $# -gt 0 ] && [ ! -s "$sessionfile" ] && touch "$askfile"
+      else
+        setsid hal2-client >"$log" 2>&1 &
+      fi
 
       [ $# -eq 0 ] && exit 0
       sleep 1
@@ -136,7 +151,11 @@ let
         [ -n "$session" ] && xpra control "$session" "''${opts[@]}" start -- "$@" >/dev/null 2>&1 && exit 0
         sleep 1
       done
-      echo "hal2: could not start '$*' in hal2's session, see $log" >&2
+      reason=$(grep '^hal2-client:' "$log" 2>/dev/null | tail -n 1 || true)
+      msg="hal2: could not start '$*' in hal2's session''${reason:+ ($reason)}, see $log"
+      echo "$msg" >&2
+      # nothing to report when the picker was cancelled on purpose
+      case $reason in *"picker cancelled") ;; *) kdialog --title hal2 --error "$msg" >/dev/null 2>&1 & ;; esac
       exit 1
     '';
   };
