@@ -183,6 +183,23 @@ let
 in {
   home.packages = [ xpra hal2 hal2-vicinae ];
 
+  # client settings (the hal2 credentials stay in ~/.config/xpra/hal2, outside this repo)
+  xdg.configFile."xpra/xpra.conf".text = ''
+    sharing=yes
+    desktop-scaling=off
+    dpi=192
+    # paint with the GPU (Zink on Turnip, through hostGpu.wrap)
+    opengl=yes
+    # H.264 for moving content: `auto` with a high min-quality picked full-frame WebP, with
+    # ~120 ms of encoding latency per 1080p frame on hal2
+    encoding=h264
+    min-quality=50
+    min-speed=0
+    # no audio/video lip-sync: hal2 delayed every frame by xpra's estimated audio latency
+    # (~275 ms, from hard-coded guesses)
+    av-sync=no
+  '';
+
   xdg.desktopEntries.hal2-vicinae = {
     name = "Vicinae (hal2)";
     comment = "Vicinae launcher on hal2";
