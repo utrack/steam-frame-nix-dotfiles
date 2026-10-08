@@ -4,11 +4,12 @@ let
 in {
   imports = [
     ./host-gpu       # config.lib.hostGpu.wrap: Nix apps on SteamOS's GPU drivers
-    ./kdeconnect.nix # KDE Connect in the Frametop desktop
     ./firefox-hwdec  # hardware video decoding in the Firefox Flatpak
     ./xpra           # hal2's apps as floating VR windows (`hal2 <command>`, Vicinae)
     ./netbird        # NetBird VPN: system daemon (netbird-service-install) and desktop app
     ./lan-mouse      # hal2's keyboard and mouse in the Steam session
+    ./vr-notify      # desktop notifications as clickable panels in VR
+    ./kdeconnect     # KDE Connect in the Steam session (phone notifications in VR)
   ];
 
   home.username = username;            # set in flake.nix
