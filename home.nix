@@ -8,7 +8,6 @@ in {
     ./xpra           # hal2's apps as floating VR windows (`hal2 <command>`, Vicinae)
     ./netbird        # NetBird VPN: system daemon (netbird-service-install) and desktop app
     ./lan-mouse      # hal2's keyboard and mouse in the Steam session
-    ./vr-notify      # desktop notifications as clickable panels in VR
     ./kdeconnect     # KDE Connect in the Steam session (phone notifications in VR)
   ];
 
@@ -42,6 +41,13 @@ in {
   # shadows SteamOS's /usr/bin/vlc on PATH; its desktop files go into
   # ~/.local/share/applications, ahead of /usr/share's (which run /usr/bin/vlc)
   home.packages = [ vlc ];
+
+  # desktop notifications as clickable panels in VR, see
+  # https://github.com/utrack/steamvr-notifyd
+  services.steamvr-notifyd = {
+    enable = true;
+    # args = [ "--width" "0.3" "--right" "12" "--down" "18" ];  # `vr-notifyd --help`
+  };
   xdg.dataFile = lib.genAttrs
     (map (n: "applications/${n}.desktop")
       [ "vlc" "vlc-openbd" "vlc-opencda" "vlc-opendvd" "vlc-openvcd" ])

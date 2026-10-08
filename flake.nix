@@ -15,9 +15,14 @@
       url = "github:lhns/steam-frame-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Desktop notifications as clickable panels in VR (services.steamvr-notifyd).
+    steamvr-notifyd = {
+      url = "github:utrack/steamvr-notifyd";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { nixpkgs, nixpkgs-flatpak, home-manager, steam-frame-nix, ... }:
+  outputs = { nixpkgs, nixpkgs-flatpak, home-manager, steam-frame-nix, steamvr-notifyd, ... }:
   let
     # Filled in by install.sh; the defaults match the Steam Frame.
     username = "steamos";
@@ -33,6 +38,7 @@
       };
       modules = [
         steam-frame-nix.homeManagerModules.default
+        steamvr-notifyd.homeManagerModules.default
         ./home.nix
       ];
     };

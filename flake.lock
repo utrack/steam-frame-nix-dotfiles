@@ -73,7 +73,8 @@
         "home-manager": "home-manager",
         "nixpkgs": "nixpkgs",
         "nixpkgs-flatpak": "nixpkgs-flatpak",
-        "steam-frame-nix": "steam-frame-nix"
+        "steam-frame-nix": "steam-frame-nix",
+        "steamvr-notifyd": "steamvr-notifyd"
       }
     },
     "steam-frame-nix": {
@@ -94,6 +95,26 @@
       "original": {
         "owner": "lhns",
         "repo": "steam-frame-nix",
+        "type": "github"
+      }
+    },
+    "steamvr-notifyd": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1791496141,
+        "narHash": "sha256-qDLPmkwMqtDANkiOZYQW3HNA1JZR8rD9Eg1sZlutIKM=",
+        "owner": "utrack",
+        "repo": "steamvr-notifyd",
+        "rev": "eada572082667a9c739ba5f107a778fcc0b7f3fc",
+        "type": "github"
+      },
+      "original": {
+        "owner": "utrack",
+        "repo": "steamvr-notifyd",
         "type": "github"
       }
     }
