@@ -16,14 +16,35 @@
 # list as soon as that one answers. "Disconnect" in xpra's tray menu ends it for good, until the
 # next `hal2`. `hal2 <command>` reports its failures with kdialog.
 #
+# xpra gives the session a private D-Bus without the KDE wallet, so xpra-hal2 also starts
+# ~/.local/bin/kwallet-bridge (--start), which passes kwalletd6 and the Secret Service through
+# from hal2's Plasma bus; Devin there runs with --password-store=kwallet6
+# (~/.config/devin-desktop-flags.conf), as Electron doesn't recognise XDG_CURRENT_DESKTOP=Xpra.
+# None of this is in hal2's dotfiles yet.
+#
 # Windows land on the Steam session's X display (:0), which floats each of them.
 { config, pkgs, ... }:
 let
-  # gamescope takes xpra's popups (menus, Firefox's autoscroll icon) for SDL fullscreen wrappers
-  # because of the child window GDK gives them, and shows them instead of their parent window
+  # gamescope-popups.patch: gamescope takes xpra's popups (menus, Firefox's autoscroll icon) for
+  # SDL fullscreen wrappers because of the child window GDK gives them, and shows them instead of
+  # their parent window.
+  # v4l2-decoder.patch: H.264 on the Frame's hardware decoder (qcom-iris, through GStreamer's
+  # v4l2h264dec), see decoderMappings.
   xpra = config.lib.hostGpu.wrap (pkgs.xpra.overrideAttrs (old: {
-    patches = (old.patches or [ ]) ++ [ ./gamescope-popups.patch ];
+    patches = (old.patches or [ ]) ++ [ ./gamescope-popups.patch ./v4l2-decoder.patch ];
   }));
+  # GStreamer decoders for xpra's gstreamer video decoder (XPRA_GSTREAMER_DECODER_MAPPINGS);
+  # v4l2h264dec only outputs frames when h264parse feeds it, and decodes a 1080p frame in
+  # ~3 ms instead of ~4-10 ms for openh264, with a third of the CPU time
+  decoderMappings = "h264:h264parse ! v4l2h264dec";
+  # Iris (Linux 6.18) keeps writing to the buffers of decoder sessions that end (SMMU faults,
+  # client crashes, corrupted frames in other windows), so the patch drains sessions before
+  # ending them and keeps them across new streams of the same size, and video regions smaller
+  # than this, which change size often (each size is a new session), stay on openh264
+  #
+  # https://steamcommunity.com/app/4165890/discussions/1/591817569256830086/
+  # https://github.com/utrack/issue-report-steam-frame-vpu-crashes
+  hwdecMinSize = "1280x720";
   # hal2's certificate is for this name, whichever address the client connects to
   certName = "hal2.home.arpa";
   # tried in order, before the hosts entered in the picker (~/.config/xpra/hal2/hosts)
@@ -44,6 +65,8 @@ let
     # created by hal2 to have a waiting hal2-client ask for a host again
     askfile=$run/hal2-xpra.ask
     export DISPLAY=:0 GDK_BACKEND=x11
+    export XPRA_GSTREAMER_DECODER_MAPPINGS=${pkgs.lib.escapeShellArg decoderMappings}
+    export XPRA_V4L2_MIN_SIZE=${hwdecMinSize}
   '';
 
   # keeps one client attached to the best reachable host, for as long as it holds $lock
@@ -198,6 +221,8 @@ in {
     # no audio/video lip-sync: hal2 delayed every frame by xpra's estimated audio latency
     # (~275 ms, from hard-coded guesses)
     av-sync=no
+    # the hardware H.264 decoder first (see decoderMappings), openh264 for windows under 128x128
+    video-decoders=gstreamer,openh264,vpx,aom
   '';
 
   xdg.desktopEntries.hal2-vicinae = {

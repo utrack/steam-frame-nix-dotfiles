@@ -1,0 +1,144 @@
+diff --git a/xpra/client/gui/window/backing.py b/xpra/client/gui/window/backing.py
+--- a/xpra/client/gui/window/backing.py
++++ b/xpra/client/gui/window/backing.py
+@@ -781,7 +781,13 @@
+                 frame = options.intget("frame", -1)
+                 # first frame should always be no 0
+                 # (but some encoders start at 1..)
+-                if frame == 0:
++                if frame == 0 and getattr(vd, "can_restart_stream", False) and vd.get_encoding() == coding \
++                        and (vd.get_width(), vd.get_height()) == (enc_width, enc_height) \
++                        and vd.get_colorspace() == input_colorspace:
++                    # hardware decoder sessions are expensive (and fragile) to restart:
++                    # feed the new stream to the same session
++                    videolog("paint_with_video_decoder: new stream, keeping %s", vd)
++                elif frame == 0:
+                     restart("first frame of new stream")
+                 elif vd.get_encoding() != coding:
+                     restart("encoding changed from %s to %s", vd.get_encoding(), coding)
+@@ -802,7 +808,10 @@
+                 all_decoders_for_cs: Sequence[CodecSpec] = decoder_options.get(input_colorspace, {})
+                 if not all_decoders_for_cs:
+                     raise RuntimeError(f"no video decoders for {coding!r} and {input_colorspace!r}")
+-                decoders_for_cs = list(all_decoders_for_cs)
++                # skip decoders that can't handle this size (ie: V4L2 hardware decoders below 128x128),
++                # rather than letting them fail, which would penalize them for every later stream
++                decoders_for_cs = [d for d in all_decoders_for_cs
++                                   if enc_width >= d.min_w and enc_height >= d.min_h] or list(all_decoders_for_cs)
+                 while not self._video_decoder:
+                     decoder_spec = choose_decoder(decoders_for_cs)
+                     videolog("paint_with_video_decoder: new %s%s",
+diff --git a/xpra/codecs/gstreamer/decoder.py b/xpra/codecs/gstreamer/decoder.py
+--- a/xpra/codecs/gstreamer/decoder.py
++++ b/xpra/codecs/gstreamer/decoder.py
+@@ -4,6 +4,7 @@
+ # later version. See the file COPYING for details.
+ 
+ import os
++from time import monotonic, sleep
+ from typing import Any
+ from collections.abc import Sequence
+ 
+@@ -91,7 +92,37 @@
+     return tuple(CODECS.keys())
+ 
+ 
+-def get_min_size(_encoding: str):
++def is_v4l2(decoder: str) -> bool:
++    # stateful V4L2 hardware decoders (ie: "h264parse ! v4l2h264dec" for qcom-iris),
++    # which output NV12 and don't decode frames smaller than 128x128
++    return "v4l2" in decoder
++
++
++def outputs_nv12(decoder: str) -> bool:
++    return decoder.startswith("nv") or is_v4l2(decoder)
++
++
++def parse_min_size(value: str) -> tuple[int, int]:
++    # the hardware's minimum is 128x128; a larger minimum keeps small video regions,
++    # which change size (and so start new decoder sessions) often, on software decoders
++    try:
++        w, h = (int(v) for v in value.lower().split("x", 1))
++    except ValueError:
++        log.warn(f"Warning: invalid XPRA_V4L2_MIN_SIZE {value!r}")
++        w = h = 0
++    return max(128, w), max(128, h)
++
++
++V4L2_MIN_W, V4L2_MIN_H = parse_min_size(os.environ.get("XPRA_V4L2_MIN_SIZE", "128x128"))
++# qcom-iris (Linux 6.18) keeps writing to the buffers of a session stopped while it still
++# has frames in flight (SMMU faults, crashes, corrupted frames in other sessions),
++# so sessions are drained with an EOS first, for at most this long:
++V4L2_DRAIN_TIMEOUT = int(os.environ.get("XPRA_V4L2_DRAIN_TIMEOUT", "500")) / 1000
++
++
++def get_min_size(encoding: str):
++    if is_v4l2(CODECS.get(encoding, "")):
++        return V4L2_MIN_W, V4L2_MIN_H
+     return 48, 16
+ 
+ 
+@@ -99,8 +130,9 @@
+     specs: Sequence[VideoSpec] = []
+     for encoding, decoder in CODECS.items():
+         in_cs = "YUV420P"
+-        out_cs = "NV12" if decoder.startswith("nv") else "YUV420P"
++        out_cs = "NV12" if outputs_nv12(decoder) else "YUV420P"
+         has_lossless_mode = encoding == "vp9" and in_cs == "YUV444P"
++        v4l2 = is_v4l2(decoder)
+         specs.append(VideoSpec(
+             encoding=encoding,
+             input_colorspace=in_cs, output_colorspaces=(out_cs, ),
+@@ -108,9 +140,12 @@
+             codec_class=Decoder, codec_type=get_type(),
+             quality=50, speed=50,
+             size_efficiency=60,
+-            setup_cost=50,
++            # as cheap as the software decoders, so the hardware decoder wins when listed first
++            setup_cost=0 if v4l2 else 50,
++            min_w=V4L2_MIN_W if v4l2 else 1,
++            min_h=V4L2_MIN_H if v4l2 else 1,
+             max_w=8192,
+-            max_h=4096,
++            max_h=8192 if v4l2 else 4096,
+         ))
+     return specs
+ 
+@@ -148,7 +183,7 @@
+         for k, v in eopts.items():
+             stream_attrs[k] = options.strget(k, v)
+         stream_caps = get_caps_str(f"video/x-{self.encoding}", stream_attrs)
+-        if self.decoder_element.startswith("nv"):
++        if outputs_nv12(self.decoder_element):
+             gst_format = "NV12"
+             self.output_format = "NV12"
+         else:
+@@ -235,7 +270,27 @@
+         # buf.timestamp = timestamp
+         # buf.offset = offset
+         # buf.offset_end = offset_end
+-        return self.process_buffer(buf, options)
++        image = self.process_buffer(buf, options)
++        if image and self.can_restart_stream:
++            # a frame that came after its timeout would otherwise be painted for the next
++            # buffer, and every frame after it one buffer late: use the newest one
++            while not self.frame_queue.empty():
++                image = self.frame_queue.get()
++        return image
++
++    @property
++    def can_restart_stream(self) -> bool:
++        # takes a new stream of the same size without a new session (see the window backing)
++        return is_v4l2(self.decoder_element)
++
++    def clean(self) -> None:
++        if self.can_restart_stream and self.src and self.sink and self.state not in ("stopped", "error"):
++            self.src.emit("end-of-stream")
++            end = monotonic() + V4L2_DRAIN_TIMEOUT
++            while not self.sink.get_property("eos") and monotonic() < end:
++                sleep(0.002)
++            log("%s drained: %s", self, self.sink.get_property("eos"))
++        super().clean()
+ 
+ 
+ GObject.type_register(Decoder)
