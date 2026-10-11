@@ -1,6 +1,24 @@
 { config, lib, pkgs, username, homeDirectory, ... }:
 let
   vlc = config.lib.hostGpu.wrap pkgs.vlc;
+  scrcpy = config.lib.hostGpu.wrap pkgs.scrcpy;
+  scrcpyVr = pkgs.writeShellApplication {
+    name = "scrcpy-vr";
+    runtimeInputs = [ scrcpy pkgs.android-tools pkgs.gawk pkgs.coreutils ];
+    text = ''
+      export DISPLAY=:0 SDL_VIDEODRIVER=x11 QT_QPA_PLATFORM=xcb
+      if ! adb devices | awk '$2 == "device" { found=1 } END { exit !found }'; then
+        kdialog --title "Android Screen" --error \
+          "No authorized Android device found. Enable Wireless debugging on your phone, then run 'adb pair PHONE_IP:PAIR_PORT' and 'adb connect PHONE_IP:DEBUG_PORT' in Konsole. Check 'adb devices' and try again."
+        exit 1
+      fi
+      log=$(mktemp -p "''${XDG_RUNTIME_DIR:-/tmp}" scrcpy-vr.XXXXXX)
+      trap 'rm -f "$log"' EXIT
+      if scrcpy 2>"$log"; then exit 0; fi
+      kdialog --title "Android Screen" --error "scrcpy failed: $(tail -n 12 "$log")"
+      exit 1
+    '';
+  };
 in {
   imports = [
     ./host-gpu       # config.lib.hostGpu.wrap: Nix apps on SteamOS's GPU drivers
@@ -40,7 +58,7 @@ in {
   # VLC with nixpkgs' full codec set (ffmpeg, libdvdcss, libbluray, ...),
   # shadows SteamOS's /usr/bin/vlc on PATH; its desktop files go into
   # ~/.local/share/applications, ahead of /usr/share's (which run /usr/bin/vlc)
-  home.packages = [ vlc ];
+  home.packages = [ vlc scrcpy pkgs.android-tools ];
 
   # desktop notifications as clickable panels in VR, see
   # https://github.com/utrack/steamvr-notifyd
@@ -52,6 +70,13 @@ in {
     (map (n: "applications/${n}.desktop")
       [ "vlc" "vlc-openbd" "vlc-opencda" "vlc-opendvd" "vlc-openvcd" ])
     (f: { source = "${vlc}/share/${f}"; });
+  xdg.desktopEntries.scrcpy = {
+    name = "Android Screen (scrcpy)";
+    exec = "${scrcpyVr}/bin/scrcpy-vr";
+    icon = "${scrcpy}/share/icons/hicolor/256x256/apps/scrcpy.png";
+    terminal = false;
+    categories = [ "Utility" ];
+  };
 
   # Steam Frame fixes, see https://github.com/lhns/steam-frame-nix
   # (session.portalFix and session.applicationsMenu are on by default).

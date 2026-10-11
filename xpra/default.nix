@@ -31,7 +31,7 @@ let
   # v4l2-decoder.patch: H.264 on the Frame's hardware decoder (qcom-iris, through GStreamer's
   # v4l2h264dec), see decoderMappings.
   xpra = config.lib.hostGpu.wrap (pkgs.xpra.overrideAttrs (old: {
-    patches = (old.patches or [ ]) ++ [ ./gamescope-popups.patch ./v4l2-decoder.patch ];
+    patches = (old.patches or [ ]) ++ [ ./gamescope-popups.patch ./v4l2-decoder.patch ./scroll-events.patch ];
   }));
   # GStreamer decoders for xpra's gstreamer video decoder (XPRA_GSTREAMER_DECODER_MAPPINGS);
   # v4l2h264dec only outputs frames when h264parse feeds it, and decodes a 1080p frame in
@@ -211,6 +211,7 @@ in {
     sharing=yes
     desktop-scaling=off
     dpi=192
+    mousewheel=coarse
     # paint with the GPU (Zink on Turnip, through hostGpu.wrap)
     opengl=yes
     # H.264 for moving content: `auto` with a high min-quality picked full-frame WebP, with
@@ -221,8 +222,8 @@ in {
     # no audio/video lip-sync: hal2 delayed every frame by xpra's estimated audio latency
     # (~275 ms, from hard-coded guesses)
     av-sync=no
-    # the hardware H.264 decoder first (see decoderMappings), openh264 for windows under 128x128
-    video-decoders=gstreamer,openh264,vpx,aom
+    # use software decoders while the hardware H.264 decoder is unstable. add 'gstreamer' to enable hwdec
+    video-decoders=openh264,vpx,aom
   '';
 
   xdg.desktopEntries.hal2-vicinae = {

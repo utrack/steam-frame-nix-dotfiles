@@ -34,7 +34,8 @@ setup() {
   fi
 
   tops=("$host_lib/libEGL_mesa.so.0")
-  for l in libGLX_mesa.so.0 libgbm.so.1 libvulkan.so.1; do
+  for l in libGLX_mesa.so.0 libgbm.so.1 libvulkan.so.1 \
+           libEGL.so.1 libGL.so.1 libGLX.so.0 libGLESv2.so.2 libOpenGL.so.0; do
     [ -e "$host_lib/$l" ] && tops+=("$host_lib/$l")
   done
   for j in "$icd_dir"/*.json; do
