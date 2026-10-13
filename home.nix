@@ -70,6 +70,13 @@ in {
     (map (n: "applications/${n}.desktop")
       [ "vlc" "vlc-openbd" "vlc-opencda" "vlc-opendvd" "vlc-openvcd" ])
     (f: { source = "${vlc}/share/${f}"; });
+  # Caps Lock switches between the layouts of steamFrame.keyboard.layout, as on hal2 (kxkbrc);
+  # the xpra client takes its keysyms from the Steam session's keymap. steamFrame.keyboard has
+  # no XKB options, so they go in a gamescope-session drop-in of their own (next session start).
+  xdg.configFile."systemd/user/gamescope-session.service.d/keyboard-options.conf".text = ''
+    [Service]
+    Environment=XKB_DEFAULT_OPTIONS=grp:caps_toggle
+  '';
   xdg.desktopEntries.scrcpy = {
     name = "Android Screen (scrcpy)";
     exec = "${scrcpyVr}/bin/scrcpy-vr";
@@ -81,7 +88,7 @@ in {
   # Steam Frame fixes, see https://github.com/lhns/steam-frame-nix
   # (session.portalFix and session.applicationsMenu are on by default).
   steamFrame = {
-    keyboard.layout = "us";               # XKB layout, Steam session
+    keyboard.layout = "us,ru";            # XKB layout, Steam session (options: below)
     keyboard.vr.extraKeys.enable = true;  # Esc/Ctrl/Alt/arrows in VR
     keyboard.vr.enable = true;            # swipe, suggestions, Backspace drag
     # nested desktop <-> Steam session clipboard (builds from source,

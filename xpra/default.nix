@@ -20,6 +20,10 @@
 # ~/.local/bin/kwallet-bridge (--start), which passes kwalletd6 and the Secret Service through
 # from hal2's Plasma bus; Devin there runs with --password-store=kwallet6
 # (~/.config/devin-desktop-flags.conf), as Electron doesn't recognise XDG_CURRENT_DESKTOP=Xpra.
+# xpra-hal2 also starts ~/.local/bin/xpra-hotkeys, a kglobalacceld of the session's own (X11
+# mode, on :100) that reads the desktop's ~/.config/kglobalshortcutsrc, so Plasma's launch
+# shortcuts (Meta+Return, Meta+Space, ...) work while an xpra window has the keyboard; it runs in
+# hal2-vicinae's runtime dir, so Meta+Space reaches the session's Vicinae.
 # None of this is in hal2's dotfiles yet.
 #
 # Windows land on the Steam session's X display (:0), which floats each of them.
