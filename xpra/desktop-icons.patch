@@ -1,0 +1,111 @@
+Only in b/xpra/client/gui: __pycache__
+diff --git a/xpra/client/gui/window_base.py b/xpra/client/gui/window_base.py
+--- a/xpra/client/gui/window_base.py
++++ b/xpra/client/gui/window_base.py
+@@ -328,6 +328,9 @@
+ 
+     def reset_icon(self) -> None:
+         current_icon = self._current_icon
++        # set an icon before the window is mapped, the server only sends one afterwards
++        if not current_icon and (get_initial_icon := getattr(self._client, "get_initial_window_icon", None)):
++            current_icon, self._desktop_icon = get_initial_icon(self.wid, self._metadata)
+         iconlog("reset_icon() current icon=%s", current_icon)
+         if current_icon:
+             self.update_icon(current_icon)
+Only in b/xpra/client/subsystem/window: __pycache__
+diff --git a/xpra/client/subsystem/window/window_icon.py b/xpra/client/subsystem/window/window_icon.py
+--- a/xpra/client/subsystem/window/window_icon.py
++++ b/xpra/client/subsystem/window/window_icon.py
+@@ -4,6 +4,7 @@
+ # later version. See the file COPYING for details.
+ 
+ import os
++import json
+ from time import time
+ 
+ from xpra.common import noop
+@@ -21,6 +22,18 @@
+ ICON_OVERLAY: int = envint("XPRA_ICON_OVERLAY", 50)
+ ICON_SHRINKAGE: int = envint("XPRA_ICON_SHRINKAGE", 75)
+ SAVE_WINDOW_ICONS: bool = envbool("XPRA_SAVE_WINDOW_ICONS", False)
++# directory with the server's desktop icons: index.json maps lowercase window classes to png files
++DESKTOP_ICONS: str = os.environ.get("XPRA_DESKTOP_ICONS", "")
++# 0 keeps the size of the icon
++ICON_SIZE: int = envint("XPRA_WINDOW_ICON_SIZE", 0)
++
++
++def lanczos():
++    from PIL import Image
++    try:
++        return Image.Resampling.LANCZOS
++    except AttributeError:
++        return Image.LANCZOS
+ 
+ 
+ def load_overlay_image(icon_filename: str):
+@@ -53,6 +66,8 @@
+ 
+     def __init__(self):
+         self.overlay_image = None
++        self.desktop_icons: dict[str, str] = {}
++        self.desktop_icons_mtime: float | None = None
+ 
+     def init(self, opts) -> None:
+         self.overlay_image = load_overlay_image(opts.tray_icon)
+@@ -70,6 +85,34 @@
+                 if reset_icon:
+                     reset_icon()
+ 
++    def get_desktop_icon_filename(self, class_instance) -> str:
++        index = os.path.join(DESKTOP_ICONS, "index.json")
++        try:
++            mtime = os.stat(index).st_mtime
++            if mtime != self.desktop_icons_mtime:
++                with open(index, encoding="utf8") as f:
++                    self.desktop_icons = json.load(f)
++                self.desktop_icons_mtime = mtime
++        except (OSError, ValueError) as e:
++            log("no desktop icons in %r: %s", index, e)
++            return ""
++        for name in reversed(class_instance):
++            if filename := self.desktop_icons.get(name.lower()):
++                return os.path.join(DESKTOP_ICONS, filename)
++        return ""
++
++    def get_initial_window_icon(self, wid: int, metadata) -> tuple:
++        # the desktop icon for the window class, which then takes precedence over the server's,
++        # or our own until the server sends one
++        class_instance = metadata.strtupleget("class-instance") if DESKTOP_ICONS else ()
++        if filename := self.get_desktop_icon_filename(class_instance):
++            with log.trap_error(f"Error: failed to load desktop icon {filename!r}"):
++                from PIL import Image
++                img = Image.open(filename).convert("RGBA")
++                log("window %#x: desktop icon %r for %s", wid, filename, class_instance)
++                return self.window_icon_image(wid, img.width, img.height, "RGBA", img.tobytes()), True
++        return self.window_icon_image(wid, 0, 0, "default", b""), False
++
+     ######################################################################
+     # combine the window icon with our own icon
+     def window_icon_image(self, wid: int, width: int, height: int, coding: str, data):
+@@ -135,6 +178,8 @@
+                 filename = "client-window-%#x-icon-composited-%i.png" % (wid, save_time)
+                 icon.save(filename, "png")
+                 log("client composited window icon saved to %s", filename)
++        if icon and ICON_SIZE > 0 and icon.size != (ICON_SIZE, ICON_SIZE):
++            icon = icon.resize((ICON_SIZE, ICON_SIZE), lanczos())
+         return icon
+ 
+     def _process_window_icon(self, packet: Packet) -> None:
+@@ -143,8 +188,11 @@
+         h = packet.get_u16(3)
+         coding = packet.get_str(4)
+         data = packet.get_bytes(5)
+-        img = self.window_icon_image(wid, w, h, coding, data)
+         window = self.get_window(wid)
++        if getattr(window, "_desktop_icon", False):
++            log("_process_window_icon(%s, ..) keeping the desktop icon", wid)
++            return
++        img = self.window_icon_image(wid, w, h, coding, data)
+         log("_process_window_icon(%s, %s, %s, %s, %s bytes) image=%s, window=%s",
+             wid, w, h, coding, len(data), img, window)
+         if window and img:
