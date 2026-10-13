@@ -27,11 +27,6 @@
 # None of this is in hal2's dotfiles yet.
 #
 # Windows land on the Steam session's X display (:0), which floats each of them.
-#
-# Window icons are hal2's desktop icons for the window class (from its .desktop files and icon
-# theme), with xpra's logo in the corner; hal2-client fetches them over SSH (as sshUser) on each
-# connection into ~/.cache/xpra/hal2-icons (`hal2-icons <host>` does it by hand), and windows
-# without one get the icon the app sets. See desktop-icons.patch.
 { config, pkgs, ... }:
 let
   # gamescope-popups.patch: gamescope takes xpra's popups (menus, Firefox's autoscroll icon) for
@@ -39,19 +34,17 @@ let
   # their parent window.
   # v4l2-decoder.patch: H.264 on the Frame's hardware decoder (qcom-iris, through GStreamer's
   # v4l2h264dec), see decoderMappings.
-  # desktop-icons.patch: the Steam UI shows a window's gamescope overlay thumbnail (its
+  # window-icons.patch: the Steam UI shows a window's gamescope overlay thumbnail (its
   # _NET_WM_ICON), and keeps a "?" for good when the thumbnail is still empty as the window
-  # appears, which it was until the server's icon arrived; the client now sets the desktop icon
-  # (XPRA_DESKTOP_ICONS), or its own until the server's arrives, before mapping the window.
+  # appears, which it was until the server's icon arrived; the client now sets its own icon
+  # before mapping the window, until the server's arrives.
   xpra = config.lib.hostGpu.wrap (pkgs.xpra.overrideAttrs (old: {
-    patches = (old.patches or [ ]) ++ [ ./gamescope-popups.patch ./v4l2-decoder.patch ./scroll-events.patch ./desktop-icons.patch ];
+    patches = (old.patches or [ ]) ++ [ ./gamescope-popups.patch ./v4l2-decoder.patch ./scroll-events.patch ./window-icons.patch ];
   }));
   # gamescope swaps the red and blue bytes of _NET_WM_ICON in place, width and height included,
   # and uses the icon again for each output that shows the window: 256 (0x100) survives the swap,
   # while e.g. 64 turns into 4194304 and an empty thumbnail
   iconSize = 256;
-  iconsDir = "\${XDG_CACHE_HOME:-$HOME/.cache}/xpra/hal2-icons";
-  sshUser = "u";
   # GStreamer decoders for xpra's gstreamer video decoder (XPRA_GSTREAMER_DECODER_MAPPINGS);
   # v4l2h264dec only outputs frames when h264parse feeds it, and decodes a 1080p frame in
   # ~3 ms instead of ~4-10 ms for openh264, with a third of the CPU time
@@ -86,33 +79,13 @@ let
     export DISPLAY=:0 GDK_BACKEND=x11
     export XPRA_GSTREAMER_DECODER_MAPPINGS=${pkgs.lib.escapeShellArg decoderMappings}
     export XPRA_V4L2_MIN_SIZE=${hwdecMinSize}
-    export XPRA_DESKTOP_ICONS=${iconsDir}
     export XPRA_WINDOW_ICON_SIZE=${toString iconSize}
   '';
-
-  # hal2-icons <host[:port]>: replaces $XPRA_DESKTOP_ICONS with hal2's desktop icons
-  hal2-icons = pkgs.writeShellApplication {
-    name = "hal2-icons";
-    runtimeInputs = [ pkgs.openssh pkgs.gnutar pkgs.gzip pkgs.coreutils ];
-    text = ''
-      host=''${1:?usage: hal2-icons <host[:port]>}
-      dir=${iconsDir}
-      mkdir -p "$(dirname "$dir")"
-      rm -rf "$dir.new" "$dir.old"
-      mkdir "$dir.new"
-      ssh -o BatchMode=yes -o ConnectTimeout=5 "${sshUser}@''${host%:*}" python3 - ${toString iconSize} \
-        <${./desktop-icons.py} | tar -xz -C "$dir.new"
-      [ -s "$dir.new/index.json" ]
-      [ -d "$dir" ] && mv "$dir" "$dir.old"
-      mv "$dir.new" "$dir"
-      rm -rf "$dir.old"
-    '';
-  };
 
   # keeps one client attached to the best reachable host, for as long as it holds $lock
   hal2-client = pkgs.writeShellApplication {
     name = "hal2-client";
-    runtimeInputs = [ xpra hal2-icons pkgs.procps pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.util-linux ];
+    runtimeInputs = [ xpra pkgs.procps pkgs.coreutils pkgs.gnugrep pkgs.gawk pkgs.util-linux ];
     text = ''
       ${common}
       hostsfile=$creds/hosts
@@ -165,8 +138,6 @@ let
         rm -f "$askfile"
         echo "hal2-client: connecting to $host"
         url "$host" >"$sessionfile"
-        # windows mapped before it's done get the previous icons
-        { hal2-icons "$host" || echo "hal2-client: could not fetch hal2's icons"; } 9>&- &
         # a dead link only ends the client after XPRA_PING_TIMEOUT (60 s by default), with frozen
         # windows meanwhile
         XPRA_PING_TIMEOUT=${toString pingTimeoutSeconds} \
@@ -246,7 +217,7 @@ let
     '';
   };
 in {
-  home.packages = [ xpra hal2 hal2-vicinae hal2-icons ];
+  home.packages = [ xpra hal2 hal2-vicinae ];
 
   # client settings (the hal2 credentials stay in ~/.config/xpra/hal2, outside this repo)
   xdg.configFile."xpra/xpra.conf".text = ''

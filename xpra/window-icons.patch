@@ -1,0 +1,55 @@
+diff --git a/xpra/client/gui/window_base.py b/xpra/client/gui/window_base.py
+index f791f7e..98d109c 100644
+--- a/xpra/client/gui/window_base.py
++++ b/xpra/client/gui/window_base.py
+@@ -328,6 +328,9 @@ class ClientWindowBase(ClientWidgetBase, GLibScheduler):
+ 
+     def reset_icon(self) -> None:
+         current_icon = self._current_icon
++        # set an icon before the window is mapped, the server only sends one afterwards
++        if not current_icon and (get_initial_icon := getattr(self._client, "get_initial_window_icon", None)):
++            current_icon = get_initial_icon(self.wid)
+         iconlog("reset_icon() current icon=%s", current_icon)
+         if current_icon:
+             self.update_icon(current_icon)
+diff --git a/xpra/client/subsystem/window/window_icon.py b/xpra/client/subsystem/window/window_icon.py
+index f2fa70e..ed373e2 100644
+--- a/xpra/client/subsystem/window/window_icon.py
++++ b/xpra/client/subsystem/window/window_icon.py
+@@ -21,6 +21,16 @@ DYNAMIC_TRAY_ICON: bool = envbool("XPRA_DYNAMIC_TRAY_ICON", not OSX and not is_U
+ ICON_OVERLAY: int = envint("XPRA_ICON_OVERLAY", 50)
+ ICON_SHRINKAGE: int = envint("XPRA_ICON_SHRINKAGE", 75)
+ SAVE_WINDOW_ICONS: bool = envbool("XPRA_SAVE_WINDOW_ICONS", False)
++# 0 keeps the size of the icon
++ICON_SIZE: int = envint("XPRA_WINDOW_ICON_SIZE", 0)
++
++
++def lanczos():
++    from PIL import Image
++    try:
++        return Image.Resampling.LANCZOS
++    except AttributeError:
++        return Image.LANCZOS
+ 
+ 
+ def load_overlay_image(icon_filename: str):
+@@ -70,6 +80,10 @@ class WindowIcon(StubClientMixin):
+                 if reset_icon:
+                     reset_icon()
+ 
++    def get_initial_window_icon(self, wid: int):
++        # our own icon, until the server sends one
++        return self.window_icon_image(wid, 0, 0, "default", b"")
++
+     ######################################################################
+     # combine the window icon with our own icon
+     def window_icon_image(self, wid: int, width: int, height: int, coding: str, data):
+@@ -135,6 +149,8 @@ class WindowIcon(StubClientMixin):
+                 filename = "client-window-%#x-icon-composited-%i.png" % (wid, save_time)
+                 icon.save(filename, "png")
+                 log("client composited window icon saved to %s", filename)
++        if icon and ICON_SIZE > 0 and icon.size != (ICON_SIZE, ICON_SIZE):
++            icon = icon.resize((ICON_SIZE, ICON_SIZE), lanczos())
+         return icon
+ 
+     def _process_window_icon(self, packet: Packet) -> None:
