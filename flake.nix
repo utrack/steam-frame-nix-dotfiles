@@ -31,7 +31,11 @@
     system = "aarch64-linux";
   in {
     homeConfigurations.${username} = home-manager.lib.homeManagerConfiguration {
-      pkgs = nixpkgs.legacyPackages.${system};
+      pkgs = import nixpkgs {
+        inherit system;
+        config.allowUnfreePredicate = pkg:
+          builtins.elem (nixpkgs.lib.getName pkg) [ "google-chrome-beta" ];
+      };
       extraSpecialArgs = {
         inherit username homeDirectory;
         pkgsFlatpak = nixpkgs-flatpak.legacyPackages.${system};
