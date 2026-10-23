@@ -27,7 +27,8 @@ in {
     ./netbird        # NetBird VPN: system daemon (netbird-service-install) and desktop app
     ./lan-mouse      # hal2's keyboard and mouse in the Steam session
     ./kdeconnect     # KDE Connect in the Steam session (phone notifications in VR)
-    ./chrome-beta    # Google Chrome Beta with WebXR (OpenXR, SteamVR)
+    # ./chrome-beta  # Google Chrome Beta with WebXR (OpenXR, SteamVR); disabled for chromium-steamframe
+    ./chromium-steamframe  # own Chromium build: WebXR, V4L2 video decoding
   ];
 
   home.username = username;            # set in flake.nix
