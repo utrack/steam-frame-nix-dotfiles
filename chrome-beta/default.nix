@@ -27,7 +27,13 @@ let
     # the flag, chrome --enable-logging=stderr on a WebXR page must not log
     # "seccomp-bpf failure in syscall nr=0xd1", and
     # navigator.xr.isSessionSupported("immersive-vr") must resolve true.
-    commandLineArgs = "--enable-features=OpenXR --disable-seccomp-filter-sandbox";
+    # ANGLE on Vulkan (Turnip) rather than OpenGL through Zink: one translation
+    # layer less, and WebGPU gets an adapter (none on the GL backend).
+    commandLineArgs = builtins.concatStringsSep " " [
+      "--enable-features=OpenXR,Vulkan,VulkanFromANGLE,DefaultANGLEVulkan"
+      "--use-angle=vulkan"
+      "--disable-seccomp-filter-sandbox"
+    ];
     withSymlink = false;
   }).overrideAttrs (old: {
     pname = "google-chrome-beta";
