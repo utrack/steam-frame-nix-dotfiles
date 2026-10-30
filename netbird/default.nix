@@ -72,12 +72,15 @@ let
     name = "netbird-app";
     runtimeInputs = [ ui pkgs.dbus pkgs.gnugrep pkgs.coreutils pkgs.util-linux ];
     text = ''
-      name=org.wails_app_io_netbird_ui.SingleInstance
+      name=io.netbird.ui.SingleInstance
       running() {
         dbus-send --session --print-reply --dest=org.freedesktop.DBus /org/freedesktop/DBus \
           org.freedesktop.DBus.NameHasOwner string:$name 2>/dev/null | grep -q 'boolean true'
       }
       export WEBKIT_DISABLE_DMABUF_RENDERER=1
+      # GTK 4's default GPU renderer produces a black window on gamescope; Cairo renders
+      # this small UI correctly without its Vulkan swapchain.
+      export GSK_RENDERER=cairo
       # The app's windows have fixed sizes in px; the Steam session's Xft.dpi (144) zooms their
       # pages by 1.5 and cuts them off (Xlib merges $XENVIRONMENT over the server's resources)
       export XENVIRONMENT=${pkgs.writeText "netbird-ui-xresources" "Xft.dpi: 96\n"}
