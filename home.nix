@@ -23,7 +23,6 @@ in {
   imports = [
     ./host-gpu       # config.lib.hostGpu.wrap: Nix apps on SteamOS's GPU drivers
     ./firefox-hwdec  # hardware video decoding in the Firefox Flatpak
-    ./xpra           # hal2's apps as floating VR windows (`hal2 <command>`, Vicinae)
     ./netbird        # NetBird VPN: system daemon (netbird-service-install) and desktop app
     ./lan-mouse      # hal2's keyboard and mouse in the Steam session
     ./kdeconnect     # KDE Connect in the Steam session (phone notifications in VR)
@@ -72,9 +71,9 @@ in {
     (map (n: "applications/${n}.desktop")
       [ "vlc" "vlc-openbd" "vlc-opencda" "vlc-opendvd" "vlc-openvcd" ])
     (f: { source = "${vlc}/share/${f}"; });
-  # Caps Lock switches between the layouts of steamFrame.keyboard.layout, as on hal2 (kxkbrc);
-  # the xpra client takes its keysyms from the Steam session's keymap. steamFrame.keyboard has
-  # no XKB options, so they go in a gamescope-session drop-in of their own (next session start).
+  # Caps Lock switches between the layouts of steamFrame.keyboard.layout, as on hal2 (kxkbrc).
+  # steamFrame.keyboard has no XKB options, so they go in a gamescope-session drop-in of their
+  # own (next session start).
   xdg.configFile."systemd/user/gamescope-session.service.d/keyboard-options.conf".text = ''
     [Service]
     Environment=XKB_DEFAULT_OPTIONS=grp:caps_toggle

@@ -23,11 +23,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1790928438,
-        "narHash": "sha256-ZuJbu8VQe/Qzy7GJdZ3Xv7adRllH1o4O7nqONtkhFbA=",
+        "lastModified": 1792818371,
+        "narHash": "sha256-yhEZAzZRNvzYpoAlyFY3wM75V9BmkIXJIueof8S5gOg=",
         "owner": "nix-community",
         "repo": "home-manager",
-        "rev": "833540099ef43cbeb28b1e3f3c21901961edb48e",
+        "rev": "2cd3234928f60bbff695a7ee56115ef7799c47cd",
         "type": "github"
       },
       "original": {
@@ -38,11 +38,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1790822859,
-        "narHash": "sha256-69xHQhAeMAD2wDXO7T2pcOZIF9Sga2W+JkmY2a11Ops=",
+        "lastModified": 1792773339,
+        "narHash": "sha256-rZLrzrC6i+jnTAlvPZHogKDulY7WWDEv9hJeHieO7Zw=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "c59305bab2065cfecc4944690d9eedbb56f3a9fa",
+        "rev": "3ec636362e1816bc2f0888fa0fa2c69f1bc9e504",
         "type": "github"
       },
       "original": {
@@ -54,11 +54,11 @@
     },
     "nixpkgs-flatpak": {
       "locked": {
-        "lastModified": 1790920529,
-        "narHash": "sha256-nQyFkMR78WP6PiXKkDW2SjqzLf/spQqjRuxRGSbcV8k=",
+        "lastModified": 1792615934,
+        "narHash": "sha256-MlvRfa1O5Cqc2/a+gG+l9TSuowEoCKCmrJ1d9oAVm0I=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "774debe7a0d1b496e35677ad955a1011c6ff74f3",
+        "rev": "da6dc0e7b26060f2f71ce3ef7088fb56ee44fa36",
         "type": "github"
       },
       "original": {
@@ -85,11 +85,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1790894478,
-        "narHash": "sha256-hKJoJiGpulabiy3iX9JeZYAZEEboBstWBXHsoxaAI5M=",
+        "lastModified": 1792272113,
+        "narHash": "sha256-dw/3Lk+KKBhNULh353lRJCnPNqMCDooWcP6uvyW9nGA=",
         "owner": "lhns",
         "repo": "steam-frame-nix",
-        "rev": "07b2e6f682a3c010cc62607fd3c24e159244da58",
+        "rev": "881c1de6a9e813b7c269be80a9bf91baf588f5f2",
         "type": "github"
       },
       "original": {
@@ -105,11 +105,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1791496141,
-        "narHash": "sha256-qDLPmkwMqtDANkiOZYQW3HNA1JZR8rD9Eg1sZlutIKM=",
+        "lastModified": 1791496606,
+        "narHash": "sha256-hKPzw4OQBOtj+deCsE9Lm1VV6QjJHUqwK5UmqjTvs1c=",
         "owner": "utrack",
         "repo": "steamvr-notifyd",
-        "rev": "eada572082667a9c739ba5f107a778fcc0b7f3fc",
+        "rev": "20872deab141596aca7f1b253cc43e0e9456cdf0",
         "type": "github"
       },
       "original": {
