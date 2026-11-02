@@ -26,6 +26,7 @@ in {
     ./netbird        # NetBird VPN: system daemon (netbird-service-install) and desktop app
     ./lan-mouse      # hal2's keyboard and mouse in the Steam session
     ./kdeconnect     # KDE Connect in the Steam session (phone notifications in VR)
+    ./framekeyboard # Full Keyboard: full-size VR keyboard for local apps
     # ./chrome-beta  # Google Chrome Beta with WebXR (OpenXR, SteamVR); disabled for chromium-steamframe
     ./chromium-steamframe  # own Chromium build: WebXR, V4L2 video decoding
   ];

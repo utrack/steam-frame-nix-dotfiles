@@ -16,6 +16,19 @@
         "type": "github"
       }
     },
+    "framekeyboard-release": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1793568633,
+        "narHash": "sha256-K7cLK+Vjed4A5UtxTHm+Mj13QY+ZDBSdTc+jLxsy9+c=",
+        "type": "tarball",
+        "url": "https://github.com/TaiKeid/steam-frame-full-keyboard/releases/download/0.14.1/framekeyboard-0.14.1-aarch64.tar.gz"
+      },
+      "original": {
+        "type": "tarball",
+        "url": "https://github.com/TaiKeid/steam-frame-full-keyboard/releases/download/0.14.1/framekeyboard-0.14.1-aarch64.tar.gz"
+      }
+    },
     "home-manager": {
       "inputs": {
         "nixpkgs": [
@@ -70,6 +83,7 @@
     },
     "root": {
       "inputs": {
+        "framekeyboard-release": "framekeyboard-release",
         "home-manager": "home-manager",
         "nixpkgs": "nixpkgs",
         "nixpkgs-flatpak": "nixpkgs-flatpak",
