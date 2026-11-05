@@ -1,0 +1,36 @@
+diff --git a/cuff/ui.py b/cuff/ui.py
+--- a/cuff/ui.py
++++ b/cuff/ui.py
+@@ -429,7 +429,18 @@ def render(status, quick, pressed, tabs, page, charm, title=True, tab_page=0, toast=
+     a Marquee layer draws it). tab_page: which MAX_TABS tabs the tab row shows.
+     toast: unused (toasts are their own layer, toast_image()); badges: {charm id: badge}."""
+     quick = quick or {}
++    tree = charms.call(charm, "page") if page and charm is not None else None
+     h = height(page)
++    # List charms can grow down from the wrist. Layer's existing top anchoring and
++    # front_height-based touch coordinates already support different image heights.
++    # Measure the same tree we draw, so a refresh cannot change its size in between.
++    if getattr(charm, "expand_page", False) and tree is not None and tree is not charms.FAILED:
++        try:
++            content = max(0, min(512, int(tree.natural() or 0)))
++            h = max(h, PAGE_Y + 16 + content)
++        except (AttributeError, TypeError, ValueError) as e:
++            print(f"charm {charm.ctx.id}: page size: {e!r}", file=sys.stderr, flush=True)
++            tree = charms.FAILED
+     img = Image.new("RGBA", (W * SCALE, h * SCALE), (0, 0, 0, 0))
+     d = ImageDraw.Draw(img)
+     d.rounded_rectangle(s(0, 0, W, h), radius=18 * SCALE, fill=BG)
+@@ -503,11 +514,10 @@ def render(status, quick, pressed, tabs, page, charm, title=True, tab_page=0, toast=
+     if page and charm is not None:
+-        d.rounded_rectangle(s(*PAGE), radius=12 * SCALE, fill=CARD)
++        d.rounded_rectangle(s(8, PAGE_Y, W - 8, h - 8), radius=12 * SCALE, fill=CARD)
+         own = pressed[2:] if pressed and pressed.startswith("c:") else None
+-        tree = charms.call(charm, "page")
+         if tree is not charms.FAILED and tree is not None:
+             from . import widgets  # it imports this module
+             try:
+-                charm._layout = widgets.Layout(tree)
++                charm._layout = widgets.Layout(tree, box=(16, PAGE_Y + 4, W - 16, h - 12))
+                 widgets.draw(img, d, charm._layout, own, title)
+                 tree = True
+             except Exception as e:  # noqa: BLE001 - a bad tree is the charm's fault, not ours

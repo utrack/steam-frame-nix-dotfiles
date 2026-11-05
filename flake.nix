@@ -42,8 +42,29 @@
     framekeyboard = pkgs.callPackage ./framekeyboard/package.nix {
       release = framekeyboard-release;
     };
+    # Frametop owns the dashboard debugger on loopback port 8089. Upstream
+    # hardcodes 8087 in its patches, relays and restart check; that port is
+    # also forwarded to the LAN by SteamOS. Keep all clients on Frametop's
+    # existing port without changing SteamVR's settings or exposing it.
+    steamFrameSource = pkgs.applyPatches {
+      name = "steam-frame-nix-frametop";
+      src = steam-frame-nix;
+      postPatch = ''
+        grep -rlZ '8087' modules install.sh |
+          xargs -0 sed -i 's/8087/8089/g'
+        substituteInPlace modules/cleanup/check.nix \
+          --replace-fail '0100007F:1F97' '0100007F:1F99'
+      '';
+    };
+    steamFrameModules = ((import "${steamFrameSource}/flake.nix").outputs
+      (steam-frame-nix.inputs // { self = steam-frame-nix; })).homeManagerModules.default;
   in {
-    packages.${system}.framekeyboard = framekeyboard;
+    packages.${system} = {
+      inherit framekeyboard;
+      cuff = pkgs.callPackage ./cuff/package.nix { };
+    };
+    checks.${system}.steam-frame-cleanup =
+      import "${steamFrameSource}/modules/cleanup/check.nix" { inherit pkgs; };
 
     homeConfigurations.${username} = home-manager.lib.homeManagerConfiguration {
       inherit pkgs;
@@ -52,7 +73,7 @@
         pkgsFlatpak = nixpkgs-flatpak.legacyPackages.${system};
       };
       modules = [
-        steam-frame-nix.homeManagerModules.default
+        steamFrameModules
         steamvr-notifyd.homeManagerModules.default
         ./home.nix
       ];

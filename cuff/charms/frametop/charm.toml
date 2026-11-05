@@ -1,0 +1,14 @@
+id = "frametop"
+name = "Frametop windows"
+version = "1.0.0"
+api = 1
+entry = "windows:Windows"
+permissions = ["commands", "network", "toasts"]
+
+[tab]
+label = "Windows"
+
+[settings.frametop]
+type = "text"
+default = ""
+label = "Frametop folder (blank: current release or ~/frametop)"
