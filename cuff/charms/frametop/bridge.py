@@ -25,14 +25,27 @@ def load_frametop(folder):
             sys.path.insert(0, str(root / "layout"))
             ft = importlib.import_module("ft_layout")
             if not hasattr(ft, "list_window_streams"):
-                raise RuntimeError("Update Frametop to a version with direct window streaming.")
+                raise RuntimeError(
+                    "This Frametop build does not include the custom window receiver. "
+                    "Streaming without the desktop alone does not add window sharing.")
             return ft
-    raise RuntimeError("Frametop not found. Set its folder in Cuff's Frametop windows settings.")
+    raise RuntimeError("Frametop not found. Set its folder in Cuff's Frametop streams settings.")
 
 
 def window_app(value):
     """Canonical KWin UUID, as ft-layout and the window service expect it."""
     return "window:{" + str(uuid.UUID(value.removeprefix("window:").strip("{}"))) + "}"
+
+
+def source_app(display):
+    """A wrist-row identity: a window UUID or a configured full display's ID.
+
+    Sunshine can have several Desktop streams on different ports. Their saved IDs
+    distinguish them without confusing a row's identity with its stream's app name.
+    """
+    if display.get("app", "").startswith("window:"):
+        return window_app(display["app"])
+    return "display:" + display["id"]
 
 
 def title(value):
@@ -51,7 +64,7 @@ def discover(ft, host):
             )
         except (KeyError, TypeError, ValueError, AttributeError):
             continue
-        out.append({"app": app, "title": title(window.get("title") or "Window"),
+        out.append({"app": app, "kind": "window", "title": title(window.get("title") or "Window"),
                     "width": width, "height": height})
     return client, out
 
@@ -68,50 +81,63 @@ def read_state(ft, name="", refresh=False):
     try:
         reply = sock.ask("remotes", timeout=0.5)
         states = {int(e.split(":")[0]): e.split(":")[2] for e in reply.split()[2:]}
-        desktop = True
+        running = True
     except RuntimeError:
-        desktop, states = False, {}
+        running, states = False, {}
     finally:
         sock.close()
     saved = []
     for number, h, display in ft.remote_displays(layout):
-        if h is not host or not display.get("app", "").startswith("window:"):
+        if h is not host:
             continue
         try:
-            app = window_app(display["app"])
+            app = source_app(display)
         except ValueError:
             continue
-        saved.append({"app": app, "title": title(display.get("label") or display["id"]),
+        kind = "window" if app.startswith("window:") else "display"
+        label = title(display.get("label") or display["id"])
+        saved.append({"app": app, "kind": kind,
+                      "title": label if kind == "window" else f"Display · {label}",
                       "connected": not display.get("off", False),
                       "hidden": bool(display.get("hidden")),
                       "state": states.get(number, "not running")})
+    streams_supported = callable(getattr(ft, "streams_command", None))
+    if running:
+        session = "streams" if streams_supported and ft.streams_only() else "desktop"
+    else:
+        session = "starting" if streams_supported and ft.session_running() else "stopped"
     result = {"hosts": [h["name"] for h in hosts], "host": host["name"] if host else "",
-              "desktop": desktop, "saved": saved}
+              "session": session, "streams_supported": streams_supported, "saved": saved}
     if refresh and host:
         try:
             _, result["available"] = discover(ft, host)
             result["discovery_error"] = ""
         except (RuntimeError, OSError, ValueError) as exc:
-            # The UI hides saved panels too until discovery succeeds again.
+            # Window discovery is independent of the configured full displays.
             result["discovery_error"] = str(exc)
     return result
 
 
 def control(ft, name, app, connect):
-    app = window_app(app)
+    is_window = app.startswith("window:")
+    if is_window:
+        app = window_app(app)
+    elif not app.startswith("display:"):
+        raise ValueError("Unknown streaming source.")
     ft.read_layout_file()
     layout = ft.load_layout()
     host = next((h for h in layout.get("hosts", []) if h.get("name") == name), None)
     if not host:
-        raise RuntimeError("This computer is no longer configured. Refresh the window list.")
+        raise RuntimeError("This computer is no longer configured. Refresh the list.")
     found = []
     for number, h, display in ft.remote_displays(layout):
-        if h is host and display.get("app", "").startswith("window:"):
-            if window_app(display["app"]) == app:
-                found.append((number, display))
+        if h is host and source_app(display) == app:
+            found.append((number, display))
     if not found:
         if not connect:
             return  # Already removed/disconnected elsewhere.
+        if not is_window:
+            raise RuntimeError("This display is no longer configured. Add it in Frametop Remote Displays.")
         # Revalidate discovery at the tap: titles, sizes and pairing may have changed.
         client, available = discover(ft, host)
         window = next((w for w in available if w["app"] == app), None)
@@ -136,8 +162,24 @@ def handle(ft, request):
     if operation == "read":
         return read_state(ft, request.get("host", ""), request.get("discover", False))
     if operation not in ("connect", "disconnect"):
-        raise ValueError("Unknown window operation.")
+        raise ValueError("Unknown streaming operation.")
     control(ft, request["host"], request["app"], operation == "connect")
+    if not callable(getattr(ft, "streams_command", None)):
+        return {}
+    if operation == "connect" and not ft.session_running():
+        # Save the selected panel first; the new session loads connected panels at start.
+        # A failed discovery or layout write must not start a session.
+        try:
+            ft.streams_command(["start"])
+        except RuntimeError as exc:
+            raise RuntimeError(f"Panel selected, but streaming could not start: {exc}") from exc
+    elif operation == "disconnect" and ft.streams_only():
+        # Only the last connected panel ends a standalone session. Hidden panels
+        # and panels from other hosts still count. Upstream rechecks the session
+        # type when stopping, so a full desktop is left running.
+        ft.read_layout_file()
+        if not any(not display.get("off") for _, _, display in ft.remote_displays(ft.load_layout())):
+            ft.streams_command(["stop"])
     return {}
 
 

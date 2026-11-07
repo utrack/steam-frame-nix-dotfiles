@@ -31,6 +31,8 @@ class Controls(unittest.TestCase):
         self.ft = Mock()
         self.ft.load_layout.return_value = {"hosts": [self.host]}
         self.ft.remote_displays.return_value = []
+        self.ft.streams_only.return_value = False
+        self.ft.session_running.return_value = False
         self.ft.stream_size.side_effect = lambda w, h: (w // 2 * 2, h // 2 * 2)
         self.ft.list_window_streams.return_value = ("paired-client", [
             {"id": APP[7:], "title": "Editor\n$(touch unwanted)", "width": 1921, "height": 1081},
@@ -83,11 +85,92 @@ class Controls(unittest.TestCase):
         self.ft.screens_socket.return_value.ask.return_value = "ok 1 101:123:live:1920x1080"
         self.ft.list_window_streams.side_effect = RuntimeError("host offline")
         state = bridge.read_state(self.ft, "Workstation", True)
-        self.assertTrue(state["desktop"])
+        self.assertEqual(state["session"], "desktop")
         self.assertEqual(state["saved"][0]["app"], APP)
         self.assertEqual(state["saved"][0]["state"], "live")
         self.assertEqual(state["discovery_error"], "host offline")
         self.ft.screens_socket.return_value.close.assert_called_once()
+
+    def test_connect_saves_the_window_before_starting_streams_without_desktop(self):
+        bridge.handle(self.ft, {"op": "connect", "host": "Workstation", "app": APP})
+        self.ft.streams_command.assert_called_once_with(["start"])
+        calls = [call[0] for call in self.ft.mock_calls]
+        self.assertLess(calls.index("remote_command"), calls.index("streams_command"))
+
+    def test_failed_selection_does_not_start_a_session(self):
+        self.ft.list_window_streams.side_effect = RuntimeError("host offline")
+        with self.assertRaisesRegex(RuntimeError, "offline"):
+            bridge.handle(self.ft, {"op": "connect", "host": "Workstation", "app": APP})
+        self.ft.streams_command.assert_not_called()
+
+    def test_connect_does_not_start_another_session_when_one_is_running(self):
+        self.ft.session_running.return_value = True
+        bridge.handle(self.ft, {"op": "connect", "host": "Workstation", "app": APP})
+        self.ft.streams_command.assert_not_called()
+
+    def test_disconnect_never_starts_or_stops_the_session(self):
+        self.ft.remote_displays.return_value = [(117, self.host, {"id": "editor", "app": APP})]
+        bridge.handle(self.ft, {"op": "disconnect", "host": "Workstation", "app": APP})
+        self.ft.remote_command.assert_called_once_with(["disconnect", "editor"])
+        self.ft.streams_command.assert_not_called()
+
+    def test_start_failure_explains_that_the_selection_is_saved(self):
+        self.ft.streams_command.side_effect = RuntimeError("SteamVR isn't running")
+        with self.assertRaisesRegex(RuntimeError, "Panel selected.*SteamVR"):
+            bridge.handle(self.ft, {"op": "connect", "host": "Workstation", "app": APP})
+        self.ft.remote_command.assert_called_once()
+
+    def test_session_state_distinguishes_streams_desktop_startup_and_stopped(self):
+        self.ft.screens_socket.return_value.ask.return_value = "ok 0"
+        self.ft.streams_only.return_value = True
+        self.assertEqual(bridge.read_state(self.ft)["session"], "streams")
+        self.ft.streams_only.return_value = False
+        self.assertEqual(bridge.read_state(self.ft)["session"], "desktop")
+        self.ft.screens_socket.return_value.ask.side_effect = RuntimeError("not listening")
+        self.ft.session_running.return_value = True
+        self.assertEqual(bridge.read_state(self.ft)["session"], "starting")
+        self.ft.session_running.return_value = False
+        self.assertEqual(bridge.read_state(self.ft)["session"], "stopped")
+
+    def test_old_window_build_can_still_connect_without_session_controls(self):
+        self.ft.streams_command = None
+        self.ft.screens_socket.return_value.ask.return_value = "ok 0"
+        bridge.handle(self.ft, {"op": "connect", "host": "Workstation", "app": APP})
+        self.ft.remote_command.assert_called_once()
+        self.assertFalse(bridge.read_state(self.ft)["streams_supported"])
+
+    def test_full_display_identity_distinguishes_ports_and_hosts(self):
+        other_host = {"name": "Other computer"}
+        self.ft.remote_displays.return_value = [
+            (101, self.host, {"id": "dp1", "app": "Desktop", "port": 47989}),
+            (102, self.host, {"id": "dp2", "app": "Desktop", "port": 48089}),
+            (103, other_host, {"id": "other-dp", "app": "Desktop", "port": 48089}),
+            (104, self.host, {"id": "editor", "app": APP}),
+        ]
+        bridge.control(self.ft, "Workstation", "display:dp2", True)
+        self.ft.set_hidden.assert_called_once_with("102", False)
+        self.ft.remote_command.assert_called_once_with(["connect", "dp2"])
+        self.ft.list_window_streams.assert_not_called()
+
+    def test_removed_display_is_not_recreated_or_paired(self):
+        with self.assertRaisesRegex(RuntimeError, "no longer configured"):
+            bridge.control(self.ft, "Workstation", "display:gone", True)
+        self.ft.remote_command.assert_not_called()
+        self.ft.list_window_streams.assert_not_called()
+
+    def test_full_displays_are_available_when_window_discovery_fails(self):
+        self.ft.remote_displays.return_value = [
+            (101, self.host, {"id": "dp1", "app": "Desktop", "label": "DP-1", "port": 47989}),
+            (102, self.host, {"id": "dp2", "app": "Desktop", "label": "DP-2", "port": 48089}),
+        ]
+        self.ft.screens_socket.return_value.ask.return_value = "ok 1 101:123:live:1920x1080"
+        self.ft.list_window_streams.side_effect = RuntimeError("window service unavailable")
+        state = bridge.read_state(self.ft, "Workstation", True)
+        self.assertEqual([row["app"] for row in state["saved"]], ["display:dp1", "display:dp2"])
+        self.assertEqual(state["saved"][0]["title"], "Display · DP-1")
+        self.assertEqual(state["saved"][0]["kind"], "display")
+        self.assertEqual(state["saved"][0]["state"], "live")
+        self.assertEqual(state["discovery_error"], "window service unavailable")
 
 
 class WristPage(unittest.TestCase):
@@ -95,6 +178,7 @@ class WristPage(unittest.TestCase):
         self.ctx = Mock(settings={})
         self.charm = windows.Windows(self.ctx)
         self.charm.sample()
+        self.charm._rows = [row for row in self.charm._rows if row.get("kind") != "display"]
 
     def test_rapid_taps_cannot_queue_overlapping_actions(self):
         self.charm.press(windows.action_id("disconnect", "Workstation", APP))
@@ -115,6 +199,7 @@ class WristPage(unittest.TestCase):
         self.assertIsNone(self.charm._pending)
 
     def test_page_and_touch_targets_fit_the_wrist_panel(self):
+        self.charm.sample()  # Include the display as well as window rows.
         ui = windows.w.ui
         image = ui.render(None, {}, None, [("frametop", "Windows")], "frametop", self.charm)
         layout = self.charm._layout
@@ -161,7 +246,8 @@ class WristPage(unittest.TestCase):
 
     def test_failed_discovery_replaces_cached_and_saved_rows_until_host_recovers(self):
         saved = [self.charm._rows[0]]
-        base = {"hosts": ["Workstation"], "host": "Workstation", "desktop": True, "saved": saved}
+        base = {"hosts": ["Workstation"], "host": "Workstation", "session": "streams",
+                "streams_supported": True, "saved": saved}
         available = [{"app": OTHER, "title": "Old browser window"}]
         recovered_app = "window:{00000000-0000-0000-0000-000000000099}"
         replies = [
@@ -216,6 +302,55 @@ class WristPage(unittest.TestCase):
         self.assertNotIn("PYTHONPATH", kwargs["env"])
         self.assertEqual(json.loads(kwargs["input"])["host"], "A;B")
 
+    def test_session_controls_are_gone_and_stale_taps_do_nothing(self):
+        for session in ("streams", "desktop", "starting", "stopped"):
+            self.charm._session = session
+            buttons = windows.w.Layout(self.charm.page()).buttons
+            self.assertNotIn("start_streams", buttons)
+            self.assertNotIn("stop_streams", buttons)
+            self.charm.press("start_streams")
+            self.charm.press("stop_streams")
+            self.assertIsNone(self.charm._pending)
+
+    def test_connect_resumes_a_selected_panel_when_the_session_is_stopped(self):
+        self.charm._session = "stopped"
+        self.assertTrue(self.charm._rows[0]["connected"])
+        connect = windows.action_id("connect", "Workstation", APP)
+        self.assertIn(connect, windows.w.Layout(self.charm.page()).buttons)
+        self.charm.press(windows.action_id("disconnect", "Workstation", APP))
+        self.assertIsNone(self.charm._pending)
+        self.charm.press(connect)
+        self.assertEqual(self.charm._pending, {"op": "connect", "host": "Workstation", "app": APP})
+
+    def test_full_display_controls_survive_failed_window_discovery(self):
+        display = {"app": "display:dp1", "kind": "display", "title": "Display · DP-1",
+                   "connected": False, "hidden": True}
+        state = {"hosts": ["Workstation"], "host": "Workstation", "session": "streams",
+                 "streams_supported": True, "saved": [self.charm._rows[0], display],
+                 "discovery_error": "window service unavailable"}
+        with patch.object(windows, "request", return_value=state):
+            self.charm._update()
+        buttons = windows.w.Layout(self.charm.page()).buttons
+        connect = windows.action_id("connect", "Workstation", "display:dp1")
+        self.assertIn(connect, buttons)
+        self.assertNotIn(windows.action_id("disconnect", "Workstation", APP), buttons)
+        self.charm.press(connect)
+        self.assertEqual(self.charm._pending["app"], "display:dp1")
+
+    def test_displays_sort_before_windows_without_merging_desktop_instances(self):
+        rows = windows.merge_windows(
+            [self.charm._rows[0],
+             {"app": "display:dp1", "kind": "display", "title": "Display · DP-1"},
+             {"app": "display:dp2", "kind": "display", "title": "Display · DP-2"}],
+            [{"app": APP, "title": "Updated editor"}])
+        self.assertEqual([row["app"] for row in rows], ["display:dp1", "display:dp2", APP])
+        self.assertEqual(rows[-1]["title"], "Updated editor")
+
+    def test_streaming_status_does_not_require_the_desktop(self):
+        self.assertEqual(windows.status(self.charm._rows[0], "streams"), "Streaming")
+        self.assertEqual(windows.status(self.charm._rows[0], "starting"), "Starting session")
+        self.assertEqual(windows.status(self.charm._rows[0], "stopped"), "Stopped · tap Connect")
+
 
 @unittest.skipUnless(os.environ.get("FRAMETOP_TEST_ROOT"), "set FRAMETOP_TEST_ROOT for real ft-layout checks")
 class LayoutIntegration(unittest.TestCase):
@@ -228,6 +363,9 @@ class LayoutIntegration(unittest.TestCase):
         self.ft = module("cuff_test_layout", Path(os.environ["FRAMETOP_TEST_ROOT"]) / "layout/ft_layout.py")
         self.ft.LAYOUT_PATH = str(root / "layout.json")
         self.ft.CONF_PATH = str(root / "frametop.conf")
+        self.ft.STREAMS_ONLY_PATH = str(root / "frametop-streams-only")
+        self.ft.session_running = Mock(return_value=False)
+        self.ft.run_session = Mock()
         self.socket = Mock()
         self.socket.ask.side_effect = lambda text, **_: "ok 0" if text == "remotes" else "ok restored"
         self.ft.screens_socket = Mock(return_value=self.socket)
@@ -284,6 +422,66 @@ class LayoutIntegration(unittest.TestCase):
         self.assertEqual(Path(self.ft.LAYOUT_PATH).read_text(), "{broken")
         self.socket.ask.assert_not_called()
         self.ft.run_stream.assert_not_called()
+
+    def test_connect_without_compositor_uses_upstream_streams_session(self):
+        if not hasattr(self.ft, "streams_command"):
+            self.skipTest("older Frametop has no streams-only sessions")
+        self.socket.ask.side_effect = self.ft.NoAnswer("compositor stopped")
+        with contextlib.redirect_stdout(io.StringIO()):
+            bridge.handle(self.ft, {"op": "connect", "host": "Workstation", "app": APP})
+        self.ft.run_session.assert_called_once_with(["FT_STREAMS_ONLY=1"], "the streams")
+        display = self.ft.read_layout_file()["hosts"][0]["displays"][1]
+        self.assertFalse(display.get("off", False))
+        self.assertFalse(display.get("hidden", False))
+        self.assertEqual(display["pos"], self.display["pos"])
+
+    def test_stop_streams_cannot_stop_a_desktop_that_started_after_readback(self):
+        if not hasattr(self.ft, "streams_command"):
+            self.skipTest("older Frametop has no streams-only sessions")
+        self.ft.session_running.return_value = True
+        with patch.object(self.ft, "streams_only", side_effect=[True, False]):
+            with patch.object(self.ft.subprocess, "run") as run, contextlib.redirect_stdout(io.StringIO()):
+                bridge.handle(self.ft, {"op": "disconnect", "host": "Workstation", "app": "display:monitor"})
+        run.assert_not_called()
+        self.ft.run_session.assert_not_called()
+        self.assertTrue(self.ft.read_layout_file()["hosts"][0]["displays"][0]["off"])
+
+    def test_last_display_disconnect_stops_streams_and_keeps_saved_panels(self):
+        if not hasattr(self.ft, "streams_command"):
+            self.skipTest("older Frametop has no streams-only sessions")
+        Path(self.ft.STREAMS_ONLY_PATH).touch()
+        with patch.object(self.ft.subprocess, "run", return_value=Mock(returncode=0)) as run:
+            with contextlib.redirect_stdout(io.StringIO()):
+                bridge.handle(self.ft, {"op": "disconnect", "host": "Workstation", "app": "display:monitor"})
+        self.assertEqual(run.call_args.args[0], ["systemctl", "--user", "stop", "frametop-desktop"])
+        displays = self.ft.read_layout_file()["hosts"][0]["displays"]
+        self.assertEqual(displays[0], dict(self.other, off=True, hidden=True))
+        self.assertEqual(displays[1], self.display)
+        self.ft.run_stream.assert_not_called()
+
+    def test_hidden_panel_on_another_host_keeps_the_session_running(self):
+        if not hasattr(self.ft, "streams_command"):
+            self.skipTest("older Frametop has no streams-only sessions")
+        Path(self.ft.STREAMS_ONLY_PATH).touch()
+        layout = self.ft.load_layout()
+        layout["hosts"].append({"name": "Other", "address": "192.0.2.11", "displays": [
+            {"id": "other-panel", "app": OTHER, "client": "other-client", "screen": 112, "hidden": True},
+        ]})
+        self.ft.save_layout(layout)
+        with patch.object(self.ft.subprocess, "run") as run, contextlib.redirect_stdout(io.StringIO()):
+            bridge.handle(self.ft, {"op": "disconnect", "host": "Workstation", "app": "display:monitor"})
+        run.assert_not_called()
+
+    def test_full_display_can_reconnect_without_discovery_or_pairing(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            bridge.control(self.ft, "Workstation", "display:monitor", False)
+            bridge.control(self.ft, "Workstation", "display:monitor", True)
+        restored = self.ft.read_layout_file()
+        self.assertEqual(restored["hosts"], self.before["hosts"])
+        self.assertEqual(restored["visibility"], self.before["visibility"])
+        self.ft.run_stream.assert_not_called()
+        self.assertTrue(any(c.args[0].startswith("remote 101 start other-client ")
+                            for c in self.socket.ask.call_args_list))
 
 
 if __name__ == "__main__":

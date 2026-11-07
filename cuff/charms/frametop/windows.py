@@ -1,4 +1,4 @@
-"""Browse shared windows and control their Frametop panels from the wrist."""
+"""Browse full displays and shared windows and control their Frametop panels."""
 import json
 import os
 from pathlib import Path
@@ -38,19 +38,26 @@ def merge_windows(saved, available):
             rows[window["app"]]["title"] = window["title"]
         else:
             rows[window["app"]] = dict(window, connected=False, hidden=True, saved=False)
-    return list(rows.values())
+    return sorted(rows.values(), key=lambda row: row.get("kind") != "display")
 
 
 def action_id(operation, host, app):
     return operation + ":" + json.dumps([host, app])
 
 
-def status(row, desktop):
+def operation_for(row, session):
+    # A saved selection can outlive its session. Connect must be available to
+    # resume it without a separate session control.
+    return "disconnect" if row["connected"] and session != "stopped" else "connect"
+
+
+def status(row, session, streams_supported=True):
     if not row["connected"]:
-        label = "Disconnected" if row["saved"] else "Available to stream"
-        return label if desktop else label + " · desktop off"
-    if not desktop:
-        return "Desktop off · connects when it starts"
+        return "Disconnected" if row["saved"] else "Available to stream"
+    if session == "starting":
+        return "Starting session"
+    if session == "stopped":
+        return "Stopped · tap Connect" if streams_supported else "Start the Frametop desktop"
     state = {"live": "Streaming", "starting": "Starting", "connecting": "Connecting",
              "queued": "Waiting to connect", "lost": "Lost · retrying"}.get(row["state"], row["state"])
     return state + (" · hidden" if row["hidden"] else "")
@@ -71,7 +78,8 @@ class Windows(Charm):
         self._rows = []
         self._available = {}
         self._discovery_error = {}
-        self._desktop = False
+        self._session = "stopped"
+        self._streams_supported = False
         self._error = ""
         self._loaded = False
         self._discover_at = 0
@@ -111,11 +119,13 @@ class Windows(Charm):
                         self._discovery_error[self._host] = state["discovery_error"]
                     if self._discovery_error.get(self._host):
                         self._available.pop(self._host, None)
-                        self._rows = []
+                        self._rows = merge_windows(
+                            [row for row in state["saved"] if row.get("kind") == "display"], [])
                     else:
                         self._rows = merge_windows(state["saved"], self._available.get(self._host, []))
                     self._offset = min(self._offset, max(0, len(self._rows) - MAX_ROWS))
-                    self._desktop = state["desktop"]
+                    self._session = state["session"]
+                    self._streams_supported = state["streams_supported"]
                     if refresh:
                         self._discover_at = time.monotonic() + 15
                 self._loaded = True
@@ -147,9 +157,11 @@ class Windows(Charm):
                 operation, _, target = button_id.partition(":")
                 host, app = json.loads(target)
                 row = next((r for r in self._rows if r["app"] == app), None)
-                if row is None or host != self._host or self._error or self._discovery_error.get(host):
+                if row is None or host != self._host or self._error:
                     return
-                if operation != ("disconnect" if row["connected"] else "connect"):
+                if row.get("kind") != "display" and self._discovery_error.get(host):
+                    return
+                if operation != operation_for(row, self._session):
                     return
                 self._pending = {"op": operation, "host": self._host, "app": app}
                 self._busy = "Connecting…" if operation == "connect" else "Disconnecting…"
@@ -161,36 +173,36 @@ class Windows(Charm):
     def page(self):
         with self._lock:
             host, rows, offset = self._host, self._rows, self._offset
-            busy, error, desktop, loaded = self._busy, self._error, self._desktop, self._loaded
+            busy, error, session, loaded = self._busy, self._error, self._session, self._loaded
+            streams_supported = self._streams_supported
             discovery_error = self._discovery_error.get(host, "")
         header = w.Row([w.Button("host", host or "Computers", style="off" if busy else "normal"),
                         w.Button("refresh", "Refresh", width=64, style="off" if busy else "normal")], height=22)
-        if error or discovery_error:
-            return w.Column([
-                header,
-                w.Text("Could not load windows", colour="red", size="body"),
-                w.Text(error or discovery_error, size="small", lines=4),
-                w.Text("Retrying automatically. Tap Refresh to retry now.", size="small", colour="dim", lines=2),
-            ], gap=4)
-        if not rows:
-            message = (
-                "No windows available. Open an app on this computer." if host else
-                "Add and pair a computer in Frametop Remote Displays." if loaded else "Reading Frametop…")
-            return w.Column([header, w.Text(message, size="small", lines=4, height=90)], gap=4)
-        enabled = not busy
         children = [header]
         if busy:
             children.append(w.Text(busy, size="small", colour="amber", lines=2))
+        if error:
+            return w.Column(children + [
+                w.Text("Could not load streams", colour="red", size="body"),
+                w.Text(error, size="small", lines=4),
+                w.Text("Retrying automatically. Tap Refresh to retry now.", size="small", colour="dim", lines=2),
+            ], gap=4)
+        if not rows and not discovery_error:
+            message = (
+                "No displays or windows available. Add a display in Remote Displays or open an app on this computer." if host else
+                "Add and pair a computer in Frametop Remote Displays." if loaded else "Reading Frametop…")
+            return w.Column(children + [w.Text(message, size="small", lines=4, height=90)], gap=4)
+        enabled = not busy
         for row in rows[offset:offset + MAX_ROWS]:
-            operation = "disconnect" if row["connected"] else "connect"
+            operation = operation_for(row, session)
             children.append(w.Row([
                 w.Column([
                     w.Text(row["title"], size="small", height=14),
-                    w.Text(status(row, desktop), size="tiny", height=12,
-                           colour="green" if desktop and row.get("state") == "live" else "dim"),
+                    w.Text(status(row, session, streams_supported), size="tiny", height=12,
+                           colour="green" if session in ("streams", "desktop") and row.get("state") == "live" else "dim"),
                 ], gap=0),
                 w.Button(action_id(operation, host, row["app"]), operation.capitalize(), width=62,
-                         style=("normal" if row["connected"] else "accent") if enabled else "off"),
+                         style=("normal" if operation == "disconnect" else "accent") if enabled else "off"),
             ], height=28))
         if len(rows) > MAX_ROWS:
             children.append(w.Row([
@@ -200,6 +212,12 @@ class Windows(Charm):
                 w.Button("down", "↓", width=32,
                          style="normal" if offset + MAX_ROWS < len(rows) and not busy else "off"),
             ], height=22))
+        if discovery_error:
+            children.extend([
+                w.Text("Windows unavailable", colour="amber", size="body"),
+                w.Text(discovery_error, size="small", lines=4),
+                w.Text("Retrying automatically. Tap Refresh to retry now.", size="small", colour="dim", lines=2),
+            ])
         return w.Column(children, gap=4)
 
     def sample(self):
@@ -219,4 +237,7 @@ class Windows(Charm):
             {"app": "window:{00000000-0000-0000-0000-000000000006}", "title": "Music",
              "connected": False, "hidden": True, "saved": False},
         ]
-        self._desktop = self._loaded = True
+        self._rows.insert(0, {"app": "display:workstation-dp-1", "kind": "display", "title": "Display · DP-1",
+                             "connected": False, "hidden": True, "saved": True, "state": "not running"})
+        self._session = "streams"
+        self._streams_supported = self._loaded = True
