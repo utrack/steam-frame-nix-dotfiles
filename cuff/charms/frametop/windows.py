@@ -84,43 +84,51 @@ class Windows(Charm):
         while True:
             self._wake.wait(2)
             self._wake.clear()
+            self._update()
+
+    def _update(self):
+        """One worker iteration; a local state poll cannot clear a discovery failure."""
+        with self._lock:
+            action, self._pending = self._pending, None
+            host = self._host
+            refresh = time.monotonic() >= self._discover_at
+            if not action and not self.ctx.shown and self._loaded:
+                return
+        error = ""
+        folder = self.ctx.settings.get("frametop", "").strip()
+        try:
+            if action:
+                request(folder, **action)
+            state = request(folder, op="read", host=host, discover=refresh)
             with self._lock:
-                action, self._pending = self._pending, None
-                host = self._host
-                refresh = time.monotonic() >= self._discover_at
-                if not action and not self.ctx.shown and self._loaded:
-                    continue
-            error = ""
-            folder = self.ctx.settings.get("frametop", "").strip()
-            try:
-                if action:
-                    request(folder, **action)
-                state = request(folder, op="read", host=host, discover=refresh)
-                with self._lock:
-                    self._hosts = state["hosts"]
-                    # A computer was selected while this read was in flight.
-                    if host == self._host:
-                        self._host = state["host"]
-                        if "available" in state:
-                            self._available[self._host] = state["available"]
-                        if "discovery_error" in state:
-                            self._discovery_error[self._host] = state["discovery_error"]
+                self._hosts = state["hosts"]
+                # A computer was selected while this read was in flight.
+                if host == self._host:
+                    self._host = state["host"]
+                    if "available" in state:
+                        self._available[self._host] = state["available"]
+                    if "discovery_error" in state:
+                        self._discovery_error[self._host] = state["discovery_error"]
+                    if self._discovery_error.get(self._host):
+                        self._available.pop(self._host, None)
+                        self._rows = []
+                    else:
                         self._rows = merge_windows(state["saved"], self._available.get(self._host, []))
-                        self._offset = min(self._offset, max(0, len(self._rows) - MAX_ROWS))
-                        self._desktop = state["desktop"]
-                        if refresh:
-                            self._discover_at = time.monotonic() + 15
-                    self._loaded = True
-            except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
-                error = "Frametop took too long to answer." if isinstance(exc, subprocess.TimeoutExpired) else str(exc)
-                if action:
-                    self.ctx.notify(error)
-            with self._lock:
-                self._error = error
-                # Don't clear a tap queued while a background read was in flight.
-                if action:
-                    self._busy = ""
-            self.ctx.changed()
+                    self._offset = min(self._offset, max(0, len(self._rows) - MAX_ROWS))
+                    self._desktop = state["desktop"]
+                    if refresh:
+                        self._discover_at = time.monotonic() + 15
+                self._loaded = True
+        except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
+            error = "Frametop took too long to answer." if isinstance(exc, subprocess.TimeoutExpired) else str(exc)
+            if action:
+                self.ctx.notify(error)
+        with self._lock:
+            self._error = error
+            # Don't clear a tap queued while a background read was in flight.
+            if action:
+                self._busy = ""
+        self.ctx.changed()
 
     def press(self, button_id):
         with self._lock:
@@ -139,7 +147,7 @@ class Windows(Charm):
                 operation, _, target = button_id.partition(":")
                 host, app = json.loads(target)
                 row = next((r for r in self._rows if r["app"] == app), None)
-                if row is None or host != self._host or self._error:
+                if row is None or host != self._host or self._error or self._discovery_error.get(host):
                     return
                 if operation != ("disconnect" if row["connected"] else "connect"):
                     return
@@ -157,15 +165,22 @@ class Windows(Charm):
             discovery_error = self._discovery_error.get(host, "")
         header = w.Row([w.Button("host", host or "Computers", style="off" if busy else "normal"),
                         w.Button("refresh", "Refresh", width=64, style="off" if busy else "normal")], height=22)
+        if error or discovery_error:
+            return w.Column([
+                header,
+                w.Text("Could not load windows", colour="red", size="body"),
+                w.Text(error or discovery_error, size="small", lines=4),
+                w.Text("Retrying automatically. Tap Refresh to retry now.", size="small", colour="dim", lines=2),
+            ], gap=4)
         if not rows:
-            message = error or discovery_error or (
+            message = (
                 "No windows available. Open an app on this computer." if host else
                 "Add and pair a computer in Frametop Remote Displays." if loaded else "Reading Frametop…")
             return w.Column([header, w.Text(message, size="small", lines=4, height=90)], gap=4)
-        enabled = not busy and not error
+        enabled = not busy
         children = [header]
-        if busy or error:
-            children.append(w.Text(busy or error, size="small", colour="amber", lines=2))
+        if busy:
+            children.append(w.Text(busy, size="small", colour="amber", lines=2))
         for row in rows[offset:offset + MAX_ROWS]:
             operation = "disconnect" if row["connected"] else "connect"
             children.append(w.Row([

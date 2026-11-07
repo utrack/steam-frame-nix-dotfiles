@@ -92,7 +92,7 @@ def read_state(ft, name="", refresh=False):
             _, result["available"] = discover(ft, host)
             result["discovery_error"] = ""
         except (RuntimeError, OSError, ValueError) as exc:
-            # Saved panels remain controllable when discovery/the host is unavailable.
+            # The UI hides saved panels too until discovery succeeds again.
             result["discovery_error"] = str(exc)
     return result
 

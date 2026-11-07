@@ -76,7 +76,7 @@ class Controls(unittest.TestCase):
         self.ft.remote_command.assert_called_once_with(["disconnect", "editor"])
         self.ft.list_window_streams.assert_not_called()
 
-    def test_discovery_failure_keeps_saved_panels_controllable(self):
+    def test_discovery_failure_reports_error_alongside_saved_state(self):
         self.ft.remote_displays.return_value = [
             (101, self.host, {"id": "editor", "app": APP, "hidden": True}),
         ]
@@ -158,6 +158,51 @@ class WristPage(unittest.TestCase):
         self.assertFalse(rows[0]["connected"])
         self.assertEqual(rows[0]["title"], "New title")
         self.assertFalse(rows[1]["saved"])
+
+    def test_failed_discovery_replaces_cached_and_saved_rows_until_host_recovers(self):
+        saved = [self.charm._rows[0]]
+        base = {"hosts": ["Workstation"], "host": "Workstation", "desktop": True, "saved": saved}
+        available = [{"app": OTHER, "title": "Old browser window"}]
+        recovered_app = "window:{00000000-0000-0000-0000-000000000099}"
+        replies = [
+            dict(base, available=available, discovery_error=""),
+            dict(base, discovery_error="Could not connect to server"),
+            base,  # A successful local poll says nothing about whether the host recovered.
+            dict(base, available=[{"app": recovered_app, "title": "New browser window"}], discovery_error=""),
+        ]
+        with patch.object(windows, "request", side_effect=replies) as read:
+            with patch.object(windows.time, "monotonic", return_value=100) as clock:
+                self.charm._update()
+                self.assertIn(windows.action_id("connect", "Workstation", OTHER),
+                              windows.w.Layout(self.charm.page()).buttons)
+                for now in (116, 117):
+                    clock.return_value = now
+                    self.charm._update()
+                    page = self.charm.page()
+                    self.assertEqual(set(windows.w.Layout(page).buttons), {"host", "refresh"})
+                    self.assertTrue(any(isinstance(node, windows.w.Text)
+                                        and "Could not connect to server" in node.text for node in page.children))
+                    self.charm.press(windows.action_id("disconnect", "Workstation", APP))
+                    self.assertIsNone(self.charm._pending)
+                self.assertFalse(read.call_args.kwargs["discover"])
+                clock.return_value = 132
+                self.charm._update()
+        buttons = windows.w.Layout(self.charm.page()).buttons
+        self.assertIn(windows.action_id("disconnect", "Workstation", APP), buttons)
+        self.assertIn(windows.action_id("connect", "Workstation", recovered_app), buttons)
+        self.assertNotIn(windows.action_id("connect", "Workstation", OTHER), buttons)
+
+    def test_bridge_timeout_also_replaces_the_list_and_leaves_refresh_available(self):
+        with patch.object(windows, "request", side_effect=windows.subprocess.TimeoutExpired("bridge", 90)):
+            self.charm._update()
+        page = self.charm.page()
+        self.assertEqual(set(windows.w.Layout(page).buttons), {"host", "refresh"})
+        self.assertTrue(any(isinstance(node, windows.w.Text)
+                            and "too long to answer" in node.text for node in page.children))
+        self.charm.press(windows.action_id("disconnect", "Workstation", APP))
+        self.assertIsNone(self.charm._pending)
+        self.charm.press("refresh")
+        self.assertEqual(self.charm._discover_at, 0)
 
     def test_bridge_runs_without_shell_or_nix_library_paths(self):
         with patch.dict(os.environ, {"LD_LIBRARY_PATH": "/nix/test", "PYTHONPATH": "/nix/test"}):

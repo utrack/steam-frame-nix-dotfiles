@@ -35,7 +35,9 @@ longer lists have **↑ / ↓** controls.
   panel and stops its stream. It keeps the
   application running on the computer and retains the panel's position and settings.
 - Status distinguishes available, disconnected, streaming, retrying, and a stopped
-  Frametop desktop. Saved panels remain listed when the host cannot be reached.
+  Frametop desktop. If the host cannot be reached, an error replaces the window list.
+  The charm retries discovery every 15 seconds while open, or when you tap **Refresh**.
+  The list returns after a successful refresh; saved panel settings are preserved.
 
 Configure and pair the computer in Frametop Remote Displays first. Discovery works
 even if its last panel has been removed, as long as a saved pairing still works.

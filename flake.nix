@@ -37,7 +37,7 @@
     pkgs = import nixpkgs {
       inherit system;
       config.allowUnfreePredicate = pkg:
-        builtins.elem (nixpkgs.lib.getName pkg) [ "google-chrome-beta" "framekeyboard" ];
+        builtins.elem (nixpkgs.lib.getName pkg) [ "framekeyboard" ];
     };
     framekeyboard = pkgs.callPackage ./framekeyboard/package.nix {
       release = framekeyboard-release;
