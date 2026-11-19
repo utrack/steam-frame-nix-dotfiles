@@ -1,0 +1,13 @@
+diff --git a/modules/steam-ui-patches/lib/signatures.json b/modules/steam-ui-patches/lib/signatures.json
+index bcb256e..f6ed7ee 100644
+--- a/modules/steam-ui-patches/lib/signatures.json
++++ b/modules/steam-ui-patches/lib/signatures.json
+@@ -395,7 +395,7 @@
+         "localize": {
+           "module": { "includes": ["LocalizeStringFromFallback(", "m_mapFallbackTokens"] },
+           "exports": {
+-            "localize": { "type": "function", "includes": [".LocalizeString(e)", "$s/g"] }
++            "localize": { "type": "function", "includes": [".LocalizeString(e)", "$s/g", ".replace(/%"] }
+           },
+           "expects": ["[\"en\",\"english\"],[\"de\",\"german\"],[\"fr\",\"french\"]", "for(let t of navigator.languages)"]
+         },

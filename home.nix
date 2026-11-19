@@ -6,7 +6,6 @@ in {
     ./host-gpu       # config.lib.hostGpu.wrap: Nix apps on SteamOS's GPU drivers
     ./firefox-hwdec  # hardware video decoding in the Firefox Flatpak
     ./netbird        # NetBird VPN: system daemon (netbird-service-install) and desktop app
-    ./lan-mouse      # hal2's keyboard and mouse in the Steam session
     ./kdeconnect     # KDE Connect in the Steam session (phone notifications in VR)
     ./framekeyboard # Full Keyboard: full-size VR keyboard for local apps
     ./cuff          # wrist panel: status, quick actions and local dictation
@@ -65,8 +64,9 @@ in {
   # (session.portalFix and session.applicationsMenu are on by default).
   steamFrame = {
     keyboard.layout = "us,ru";            # XKB layout, Steam session (options: below)
-    keyboard.vr.extraKeys.enable = true;  # Esc/Ctrl/Alt/arrows in VR
-    keyboard.vr.enable = true;            # swipe, suggestions, Backspace drag
+    # Steam's VR keyboard left stock: Full Keyboard (framekeyboard) replaces it.
+    keyboard.vr.extraKeys.enable = false; # Esc/Ctrl/Alt/arrows in VR
+    keyboard.vr.enable = false;           # swipe, suggestions, Backspace drag
     # nested desktop <-> Steam session clipboard (builds from source,
     # takes a while):
     clipboardSync.enable = false;

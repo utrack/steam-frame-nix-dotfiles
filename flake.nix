@@ -50,6 +50,9 @@
     steamFrameSource = pkgs.applyPatches {
       name = "steam-frame-nix-frametop";
       src = steam-frame-nix;
+      # SteamOS 0.6 bundles export a JSX localize() next to the string one;
+      # anchor frame-controls' signature on the string export.
+      patches = [ ./steam-frame-localize.patch ];
       postPatch = ''
         grep -rlZ '8087' modules install.sh |
           xargs -0 sed -i 's/8087/8089/g'
