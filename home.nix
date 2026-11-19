@@ -10,6 +10,7 @@ in {
     ./kdeconnect     # KDE Connect in the Steam session (phone notifications in VR)
     ./framekeyboard # Full Keyboard: full-size VR keyboard for local apps
     ./cuff          # wrist panel: status, quick actions and local dictation
+    ./virt-manager  # virt-manager for remote libvirt hosts (qemu+ssh)
   ];
 
   home.username = username;            # set in flake.nix
