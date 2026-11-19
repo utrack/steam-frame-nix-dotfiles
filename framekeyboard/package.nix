@@ -9,8 +9,8 @@ let
   # checks work while the binaries themselves remain immutable.
   releaseRoot = runCommand "framekeyboard-release" { } ''
     mkdir -p $out/releases
-    cp -r ${release} $out/releases/0.14.1
-    ln -s releases/0.14.1 $out/current
+    cp -r ${release} $out/releases/0.15.0
+    ln -s releases/0.15.0 $out/current
   '';
 in
 writeShellApplication {

@@ -19,14 +19,14 @@
     "framekeyboard-release": {
       "flake": false,
       "locked": {
-        "lastModified": 1793568633,
-        "narHash": "sha256-K7cLK+Vjed4A5UtxTHm+Mj13QY+ZDBSdTc+jLxsy9+c=",
+        "lastModified": 1794023389,
+        "narHash": "sha256-j7j1AKPgmh2RfEQ59tOUDqpEZ3Fzr8xyhZ/Iil8JxDA=",
         "type": "tarball",
-        "url": "https://github.com/TaiKeid/steam-frame-full-keyboard/releases/download/0.14.1/framekeyboard-0.14.1-aarch64.tar.gz"
+        "url": "https://github.com/TaiKeid/steam-frame-full-keyboard/releases/download/0.15.0/framekeyboard-0.15.0-aarch64.tar.gz"
       },
       "original": {
         "type": "tarball",
-        "url": "https://github.com/TaiKeid/steam-frame-full-keyboard/releases/download/0.14.1/framekeyboard-0.14.1-aarch64.tar.gz"
+        "url": "https://github.com/TaiKeid/steam-frame-full-keyboard/releases/download/0.15.0/framekeyboard-0.15.0-aarch64.tar.gz"
       }
     },
     "home-manager": {
@@ -119,17 +119,18 @@
         ]
       },
       "locked": {
-        "lastModified": 1791496606,
-        "narHash": "sha256-hKPzw4OQBOtj+deCsE9Lm1VV6QjJHUqwK5UmqjTvs1c=",
-        "owner": "utrack",
-        "repo": "steamvr-notifyd",
-        "rev": "20872deab141596aca7f1b253cc43e0e9456cdf0",
-        "type": "github"
+        "lastModified": 1794169924,
+        "narHash": "sha256-BuX/y0UhKEc969DQk2TEqQPnJuR3IwMsy7CgL7Hj6ho=",
+        "ref": "cuff-notifications",
+        "rev": "4e5789d2fc614169569839e5ab5953de52b8241b",
+        "revCount": 4,
+        "type": "git",
+        "url": "file:///home/steamos/repos/steamvr-notifyd"
       },
       "original": {
-        "owner": "utrack",
-        "repo": "steamvr-notifyd",
-        "type": "github"
+        "ref": "cuff-notifications",
+        "type": "git",
+        "url": "file:///home/steamos/repos/steamvr-notifyd"
       }
     }
   },

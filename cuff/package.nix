@@ -57,6 +57,7 @@ stdenvNoCC.mkDerivation {
     font_dir = "$PWD/test-fonts"
     EOF
     CUFF_CONFIG="$PWD/test-config.toml" CUFF_FRAMETOP_SOURCE=${./charms/frametop} \
+      CUFF_NOTIFICATIONS_SOURCE=${./charms/notifications} \
       PYTHONPATH="$PWD" ${python}/bin/python -m unittest discover -s ${./tests} -v
     runHook postCheck
   '';
@@ -66,6 +67,7 @@ stdenvNoCC.mkDerivation {
     # Charms and assets are resolved relative to the Python sources.
     cp -r cuff charms VERSION "$out/share/cuff/"
     cp -r ${./charms/frametop} "$out/share/cuff/charms/frametop"
+    cp -r ${./charms/notifications} "$out/share/cuff/charms/notifications"
     # Invoke the interpreter directly: python.withPackages' extra binary
     # wrapper would make host-gpu scrub the driver paths before Python runs.
     makeWrapper ${python3.interpreter} "$out/bin/cuff" \

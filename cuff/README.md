@@ -21,6 +21,46 @@ by this module.
 See <https://github.com/Brobert-in-aus/cuff> for the panel's controls and
 optional integrations.
 
+## Notifications charm
+
+The **Notices** tab controls `steamvr-notifyd` directly on the headset's user
+bus. It includes KDE Connect's forwarded notifications.
+
+- **Do not disturb** hides current popups and silences new ones while keeping
+  their history. This includes critical notifications. Turning it off does
+  not replay the backlog.
+- Unread notifications have blue title buttons and contribute to the tab
+  badge. Tap a title to read the full message and mark it read. Long messages
+  have previous/next page controls.
+- **Mark all read** marks the notifications in the current snapshot.
+  **Clear** removes one notification; **Clear all** asks for confirmation
+  before removing the saved history and dismissing live popups.
+- A **Do not disturb** button is also available in **Settings > Quick**.
+  Add it to any quick-row slot; it displays `DND` and lights up when enabled.
+
+The daemon stores the latest 200 notifications and the DND setting across
+restarts in `~/.local/state/vr-notifyd/history.ini` (or under `XDG_STATE_HOME`).
+It collects notifications even when Cuff is stopped. History starts when the
+updated daemon is installed; older discarded notifications are unavailable.
+
+The charm needs the daemon's `org.steamvr.Notifyd1` D-Bus interface. It reports
+an unavailable or outdated service in the page and retries automatically.
+It never starts another notification daemon.
+
+The flake currently pins a commit on `cuff-notifications` in the local
+`~/repos/steamvr-notifyd` Git repository. That checkout is needed when fetching
+the input on a fresh Nix store. Once the commit is published, the input URL can
+be switched back to GitHub and locked to the published revision.
+
+Preview with `cuff render /tmp/cuff-notifications.png notifications`.
+The package build runs control and layout checks. To also exercise the charm
+against the real daemon on a private bus, use Cuff's Python environment:
+
+```sh
+CUFF_NOTIFYD_TEST_BINARY="$(command -v vr-notifyd)" \
+  dbus-run-session -- python -m unittest discover -s cuff/tests -p test_notifications.py -v
+```
+
 ## Frametop streams charm
 
 The local **Streams** tab controls full displays and individual application windows

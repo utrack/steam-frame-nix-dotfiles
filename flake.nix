@@ -17,12 +17,13 @@
     };
     # Desktop notifications as clickable panels in VR (services.steamvr-notifyd).
     steamvr-notifyd = {
-      url = "github:utrack/steamvr-notifyd";
+      # Local DND/history development; flake.lock pins the tested commit.
+      url = "git+file:///home/steamos/repos/steamvr-notifyd?ref=cuff-notifications";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     # Full Keyboard's complete Steam Frame release (upstream has no flake).
     framekeyboard-release = {
-      url = "https://github.com/TaiKeid/steam-frame-full-keyboard/releases/download/0.14.1/framekeyboard-0.14.1-aarch64.tar.gz";
+      url = "https://github.com/TaiKeid/steam-frame-full-keyboard/releases/download/0.15.0/framekeyboard-0.15.0-aarch64.tar.gz";
       flake = false;
     };
   };

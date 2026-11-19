@@ -1,0 +1,12 @@
+id = "notifications"
+name = "Notifications"
+version = "1.0.0"
+api = 1
+entry = "notifications:Notifications"
+permissions = []
+
+[tab]
+label = "Notices"
+
+[quick.dnd]
+label = "Do not disturb"
